@@ -1,0 +1,15 @@
+{application, rabbit_socks,
+ [{description, "Embedded browser sockets support"},
+  {vsn, "%%VSN%%"},
+  {modules, [
+             rabbit_socks,
+             rabbit_socks_connection,
+             rabbit_socks_echo,
+             rabbit_socks_framing,
+             rabbit_socks_mochiweb,
+             rabbit_socks_sup
+  ]},
+  {registered, []},
+  {mod, {rabbit_socks, []}},
+  {env, [{listeners, [{"127.0.0.1", 5975}]}]},
+  {applications, [kernel, stdlib, rabbit, rabbit_mochiweb]}]}.
