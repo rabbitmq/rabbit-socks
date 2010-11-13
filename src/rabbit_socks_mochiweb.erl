@@ -18,11 +18,11 @@ loop(Req) ->
 
 %% Process the request headers and work out what the response should be
 process_headers(Req) ->
-    {response, rabbit_socks_echo, []}.
+    {response, rabbit_socks_echo, [{"Upgrade", "WebSocket"}]}.
 
 %% Write the headers to the response
 send_headers(Req, Headers) ->
-    Req:start_response({101, Headers}).
+    Req:start_raw_response({101, mochiweb_headers:from_list(Headers)}).
 
 %% Close the connection with an error.
 close_error(Req) ->
@@ -31,9 +31,10 @@ close_error(Req) ->
 %% Spin up a socket to deal with frames
 start_socket(Protocol, Req) ->
     {ok, Pid} = rabbit_socks_connection_sup:start_connection(Protocol),
-    Sock = Req:get(sock),
+    Sock = Req:get(socket),
     handover_socket(Sock, Pid),
-    gen_fsm:send_event(Pid, {socket_ready, Sock}).
+    gen_fsm:send_event(Pid, {socket_ready, Sock}),
+    exit(normal).
 
 handover_socket({ssl, Sock}, Pid) ->
     ssl:controlling_process(Sock, Pid);

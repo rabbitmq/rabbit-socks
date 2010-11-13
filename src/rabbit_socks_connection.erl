@@ -55,8 +55,14 @@ handle_event(Event, StateName, StateData) ->
 handle_sync_event(Event, _From, StateName, StateData) ->
     {stop, {StateName, undefined_event, Event}, StateData}.
 
-handle_info({tcp, Data}, State, StateData) ->
-    handle_event({data, Data}, State, StateData).
+handle_info({tcp, _Sock, Data}, State, StateData) ->
+    ?MODULE:State({data, Data}, StateData);
+handle_info({tcp_closed, Socket}, _StateName,
+            #state{socket=Socket} = StateData) ->
+    error_logger:info_msg("~p Client disconnected.\n", [self()]),
+    {stop, normal, StateData};
+handle_info(_Info, StateName, StateData) ->
+    {noreply, StateName, StateData}.
 
 terminate(normal, _StateName, #state{
             protocol = Protocol,
