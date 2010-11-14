@@ -19,6 +19,7 @@ start_link(Protocol) ->
 % States
 
 wait_for_socket({socket_ready, Sock}, State) ->
+    error_logger:info_msg("Connection opened ~p", [mochiweb_socket:peername(Sock)]),
     mochiweb_socket:setopts(Sock, [{active, once}]),
     {next_state, wait_for_frame, State#state{socket = Sock}};
 wait_for_socket(_Other, State) ->

@@ -8,21 +8,34 @@ start() ->
     mochiweb_http:start([{name, ?MODULE}, {port, 5975}, {loop, fun loop/1}]).
 
 loop(Req) ->
-    case process_handshake(Req) of
-        {error, _DoesNotCompute} ->
-            close_error(Req);
+    case Req:get(path) of
+        Path = "/socket.io/" ++ _Rest ->
+            rabbit_io(Req, Path);
+        "/" ++ Path ->
+            {file, Here} = code:is_loaded(?MODULE),
+            ModuleRoot = filename:dirname(filename:dirname(Here)),
+            Static = filename:join(filename:join(ModuleRoot, "priv"), "www"),
+            Req:serve_file(Path, Static)
+    end.
+
+rabbit_io(Req, Path) ->
+    case process_handshake(Req, Path) of
+        {error, DoesNotCompute} ->
+            close_error(Req),
+            error_logger:info_msg("Connection refused: ~p", [DoesNotCompute]);
         {response, Protocol, Headers, Body} ->
+            error_logger:info_msg("Connection accepted: ~p", [Req:get(peer)]),
             send_headers(Req, Headers),
             Req:send([Body]),
             start_socket(Protocol, Req)
     end.
 
 %% Process the request headers and work out what the response should be
-process_handshake(Req) ->
+process_handshake(Req, Path) ->
     Origin = Req:get_header_value("origin"),
     Protocol = Req:get_header_value("websocket-protocol"),
     Host = Req:get_header_value("Host"),
-    Location = "ws://localhost:5975/",
+    Location = "ws://localhost:5975" ++ Path,
     FirstBit = [{"Upgrade", "WebSocket"},
                 {"Connection", "Upgrade"}],
     case Req:get_header_value("Sec-WebSocket-Key1") of

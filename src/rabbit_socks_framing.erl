@@ -4,8 +4,8 @@
 
 -record(parse, {type = unknown, fragments_rev = [], remaining = unknown}).
 
--define(TEXT_FRAME_START, "<").
--define(TEXT_FRAME_END, ">").
+-define(TEXT_FRAME_START, 0).
+-define(TEXT_FRAME_END, 255).
 
 initial_parse_state() ->
     #parse{}.
