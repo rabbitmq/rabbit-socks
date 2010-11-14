@@ -1,0 +1,56 @@
+<html>
+  <head>
+    <title>Rabbit Socks</title>
+    <!-- script type="text/javascript"
+            src="http://cdn.socket.io/stable/socket.io.js"></script -->
+    <style type="text/css">
+      #output {
+        border: 1px solid black;
+        width: 300px;
+        padding: 4px;
+      }
+      #output p {
+        padding: 2px;
+        margin: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>
+      Rabbit Socks
+    </h1>
+    <h2>Echo socket</h2>
+    <p>
+      Enter text here; it will be echoed below.
+    </p>
+    <form onsubmit="send(); return false;">
+      <input id="postbox" type="text"/>
+      <input type="submit" value="Send"/>
+    </form>
+    <div id="output">
+    </div>
+    <script type="text/javascript">
+      var sock = new WebSocket('ws://localhost:5975/socket.io/');
+      var postbox = document.getElementById('postbox');
+      var output = document.getElementById('output');
+      
+      function send() {
+        var msg = postbox.value;
+        sock.send(msg);
+        postbox.value = '';
+      }
+
+      function display(msg) {
+        var line = document.createElement('p');
+        line.innerHTML = msg;
+        output.appendChild(line);
+      }
+      
+      sock.onmessage = function(ev) { display(ev.data); };;
+      sock.onopen = function() { display('<em>Connection open</em>'); };
+      sock.onclose = function() { display('<em>Connection closed</em>'); };
+      
+      //sock.connect();
+    </script>
+  </body>
+</html>
