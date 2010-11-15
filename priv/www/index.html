@@ -30,7 +30,7 @@
     <div id="output">
     </div>
     <script type="text/javascript">
-      var sock = new WebSocket('ws://localhost:5975/socket.io/');
+      var sock = new WebSocket('ws://localhost:5975/websocket/', 'echo');
       var postbox = document.getElementById('postbox');
       var output = document.getElementById('output');
       

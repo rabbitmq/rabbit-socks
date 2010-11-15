@@ -9,8 +9,10 @@ start() ->
 
 loop(Req) ->
     case Req:get(path) of
-        Path = "/socket.io/" ++ _Rest ->
-            rabbit_io(Req, Path);
+        Path = "/socket.io/" ++ Rest ->
+            rabbit_io(Req, Path, Rest);
+        Path = "/websocket/" ++ Rest ->
+            websocket(Req, Path, Rest, rabbit_socks_framing);
         "/" ++ Path ->
             {file, Here} = code:is_loaded(?MODULE),
             ModuleRoot = filename:dirname(filename:dirname(Here)),
@@ -18,8 +20,14 @@ loop(Req) ->
             Req:serve_file(Path, Static)
     end.
 
-rabbit_io(Req, Path) ->
-    case process_handshake(Req, Path) of
+rabbit_io(Req, Path, Rest) ->
+    case Rest of
+        "websocket/" ++ Rest ->
+            websocket(Req, Path, Rest, rabbit_socks_socketio_framing)
+    end.
+
+websocket(Req, Path, Rest, Framing) ->
+    case process_handshake(Req, Path, Rest) of
         {error, DoesNotCompute} ->
             close_error(Req),
             error_logger:info_msg("Connection refused: ~p", [DoesNotCompute]);
@@ -27,35 +35,62 @@ rabbit_io(Req, Path) ->
             error_logger:info_msg("Connection accepted: ~p", [Req:get(peer)]),
             send_headers(Req, Headers),
             Req:send([Body]),
-            start_socket(Protocol, Req)
+            start_socket(Protocol, Req, Framing)
     end.
 
 %% Process the request headers and work out what the response should be
-process_handshake(Req, Path) ->
+process_handshake(Req, Path, Sub) ->
     Origin = Req:get_header_value("origin"),
-    Protocol = Req:get_header_value("websocket-protocol"),
     Host = Req:get_header_value("Host"),
     Location = "ws://localhost:5975" ++ Path,
     FirstBit = [{"Upgrade", "WebSocket"},
                 {"Connection", "Upgrade"}],
-    case Req:get_header_value("Sec-WebSocket-Key1") of
-        undefined ->
-            {response, rabbit_socks_echo, 
-             FirstBit ++
-                 [{"WebSocket-Origin", Origin},
-                  {"WebSocket-Location", Location}],
-            <<>>};
-        Key1 ->
-            Key2 = Req:get_header_value("Sec-WebSocket-Key2"),
-            Key3 = Req:recv(8),
-            Hash = handshake_hash(Key1, Key2, Key3),
-            {response, rabbit_socks_echo,
-             FirstBit ++
-                 [{"Sec-WebSocket-Origin", Origin},
-                  {"Sec-WebSocket-Location", Location}],
-             Hash}
+    case protocol(Req, Sub) of
+        {ok, ProtName, ProtModule} ->
+            case Req:get_header_value("Sec-WebSocket-Key1") of
+                undefined ->
+                    {response, ProtModule, 
+                     FirstBit ++
+                         [{"WebSocket-Origin", Origin},
+                          {"WebSocket-Location", Location},
+                          {"WebSocket-Protocol", ProtName}],
+                     <<>>};
+                Key1 ->
+                    Key2 = Req:get_header_value("Sec-WebSocket-Key2"),
+                    Key3 = Req:recv(8),
+                    Hash = handshake_hash(Key1, Key2, Key3),
+                    {response, ProtModule,
+                     FirstBit ++
+                         [{"Sec-WebSocket-Origin", Origin},
+                          {"Sec-WebSocket-Location", Location},
+                          {"Sec-WebSocket-Protocol", ProtName}],
+                     Hash}
+            end;
+        {error, _} ->
+            {error, no_protocol_given}
     end.
 
+protocol(Req, Path) ->
+    Protocol = case Req:get_header_value("WebSocket-Protocol") of
+                   undefined ->
+                       case Req:get_header_value("Sec-WebSocket-Protocol") of
+                           undefined ->
+                               Path;
+                           Prot ->
+                               Prot
+                       end;
+                   Prot ->
+                       Prot
+               end,
+    supported_protocol(Protocol).
+
+supported_protocol(Prot) ->
+    case string:to_lower(Prot) of
+        "echo"  -> {ok, Prot, rabbit_socks_echo}; 
+        "stomp" -> {ok, Prot, rabbit_socks_stomp};
+        Else    -> {error, {unknown_protocol, Else}}
+    end.
+                               
 handshake_hash(Key1, Key2, Key3) ->
     erlang:md5([reduce_key(Key1), reduce_key(Key2), Key3]).
 
@@ -81,11 +116,11 @@ close_error(Req) ->
     Req:respond({400, [], ""}).
 
 %% Spin up a socket to deal with frames
-start_socket(Protocol, Req) ->
+start_socket(Protocol, Req, Framing) ->
     {ok, Pid} = rabbit_socks_connection_sup:start_connection(Protocol),
     Sock = Req:get(socket),
     handover_socket(Sock, Pid),
-    gen_fsm:send_event(Pid, {socket_ready, Sock}),
+    gen_fsm:send_event(Pid, {socket_ready, Framing, Sock}),
     exit(normal).
 
 handover_socket({ssl, Sock}, Pid) ->

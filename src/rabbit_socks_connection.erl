@@ -10,18 +10,21 @@
 
 % Interface and states
 -export([start_link/1, wait_for_socket/2, wait_for_frame/2]).
-
--record(state, {protocol, protocol_state, socket, parse_state}).
+-record(state, {protocol, protocol_state, framing, socket, parse_state}).
 
 start_link(Protocol) ->
     gen_fsm:start_link(?MODULE, [Protocol], []).
 
 % States
 
-wait_for_socket({socket_ready, Sock}, State) ->
+wait_for_socket({socket_ready, Framing, Sock},
+                State = #state{ protocol = Protocol }) ->
     error_logger:info_msg("Connection opened ~p", [mochiweb_socket:peername(Sock)]),
     mochiweb_socket:setopts(Sock, [{active, once}]),
-    {next_state, wait_for_frame, State#state{socket = Sock}};
+    {ok, ProtocolState} = Protocol:init(Framing, Sock),
+    {next_state, wait_for_frame, State#state{protocol_state = ProtocolState,
+                                             framing = Framing, 
+                                             socket = Sock}};
 wait_for_socket(_Other, State) ->
     {next_state, wait_for_socket, State}.
 
@@ -35,7 +38,7 @@ wait_for_frame({data, Data}, State = #state{
             mochiweb_socket:setopts(Sock, [{active, once}]),
             {next_state, wait_for_frame, State#state{parse_state = ParseState1}};
         {frame, Frame, Rest} ->
-            {ok, ProtocolState1} = Protocol:handle_frame(Frame, ProtocolState, Sock),
+            {ok, ProtocolState1} = Protocol:handle_frame(Frame, ProtocolState),
             wait_for_frame({data, Rest},
                            State#state{protocol_state = ProtocolState1,
                                        parse_state = rabbit_socks_framing:initial_parse_state()})
@@ -46,9 +49,7 @@ wait_for_frame(_Other, State) ->
 %% gen_server callbacks
 
 init([Protocol]) ->
-    {ok, ProtocolState} = Protocol:init(),
     {ok, wait_for_socket, #state{protocol = Protocol,
-                                 protocol_state = ProtocolState,
                                  parse_state = rabbit_socks_framing:initial_parse_state()}}.
 
 handle_event(Event, StateName, StateData) ->
