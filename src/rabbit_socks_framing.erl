@@ -36,4 +36,6 @@ parse_utf8_frame(Bin, Parse = #parse{type = utf8,
     end.
 
 send_frame({utf8, Data}, Sock) ->
-    mochiweb_socket:send(Sock, [<<?TEXT_FRAME_START>>, Data, <<?TEXT_FRAME_END>>]).
+    send_frame(Data, Sock);
+send_frame(IoList, Sock) ->
+    mochiweb_socket:send(Sock, [<<?TEXT_FRAME_START>>, IoList, <<?TEXT_FRAME_END>>]).

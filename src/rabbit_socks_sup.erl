@@ -15,4 +15,6 @@ init([]) ->
           [{rabbit_socks_mochiweb, {rabbit_socks_mochiweb, start, []},
             transient, 5, worker, [rabbit_socks_mochiweb]},
            {rabbit_socks_echo, {rabbit_socks_echo, start_link, []},
+            transient, 5, supervisor, [rabbit_socks_connection_sup]},
+           {rabbit_socks_stomp, {rabbit_socks_stomp, start_link, []},
             transient, 5, supervisor, [rabbit_socks_connection_sup]}]}}.

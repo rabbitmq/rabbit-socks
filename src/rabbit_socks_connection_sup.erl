@@ -13,7 +13,7 @@
 init([Protocol]) ->
     {ok, {{simple_one_for_one, 10, 10},
           [{undefined, {rabbit_socks_connection, start_link, [Protocol]},
-           transient, 5, worker, [rabbit_socks_connecton]}]}}.
+           transient, 5, worker, [rabbit_socks_connection]}]}}.
 
 %% Start a supervisor for Protocol connections
 start_link(Protocol) ->
