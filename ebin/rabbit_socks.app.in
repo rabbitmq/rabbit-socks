@@ -3,13 +3,17 @@
   {vsn, "%%VSN%%"},
   {modules, [
              rabbit_socks,
+             rabbit_socks_sup,
              rabbit_socks_connection,
-             rabbit_socks_echo,
+             rabbit_socks_connection_sup,
              rabbit_socks_framing,
+             rabbit_socks_echo,
+             rabbit_socks_stomp,
+             rabbit_socks_util,
              rabbit_socks_mochiweb,
-             rabbit_socks_sup
+             rabbit_socks_socketio
   ]},
   {registered, []},
   {mod, {rabbit_socks, []}},
   {env, [{listeners, [{"127.0.0.1", 5975}]}]},
-  {applications, [kernel, stdlib, rabbit, rabbit_mochiweb]}]}.
+  {applications, [kernel, stdlib, rabbit, mochiweb]}]}.
