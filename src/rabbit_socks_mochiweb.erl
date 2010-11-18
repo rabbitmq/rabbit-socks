@@ -2,10 +2,32 @@
 
 %% Start a mochiweb server and supply frames to registered interpreters.
 
--export([start/0]).
+-export([start/1, start_listener/4]).
 
-start() ->
-    mochiweb_http:start([{name, ?MODULE}, {port, 5975}, {loop, fun loop/1}]).
+start(Listeners) ->
+    start_listeners(Listeners).
+
+start_listeners([]) ->
+    ok;
+start_listeners([{Host, Port, Options} | More]) ->
+    {IPAddress, Name} = rabbit_networking:check_tcp_listener_address(
+                          rabbit_socks_listener_sup,
+                          Host, Port),
+    supervisor:start_child(rabbit_socks_listener_sup,
+                           {Name,
+                            {?MODULE, start_listener, [Name, IPAddress, Port, Options]},
+                            transient, 10, worker, [rabbit_socks_mochiweb]}),
+    start_listeners(More).
+
+start_listener(Name, IPAddress, Port, Options) ->
+    {ok, Pid} = mochiweb_http:start([{name, Name}, {ip, IPAddress},
+                                     {port, Port}, {loop, fun loop/1} | Options]),
+    rabbit_networking:tcp_listener_started(
+      case proplists:get_bool(ssl, Options) of
+          true  -> 'http/websocket/socket.io (SSL)';
+          false -> 'http/websocket/socket.io'
+      end, IPAddress, Port),
+    {ok, Pid}.
 
 loop(Req) ->
     case Req:get(path) of
@@ -90,7 +112,7 @@ supported_protocol(Prot) ->
         "stomp" -> {ok, Prot, rabbit_socks_stomp};
         Else    -> {error, {unknown_protocol, Else}}
     end.
-                               
+
 handshake_hash(Key1, Key2, Key3) ->
     erlang:md5([reduce_key(Key1), reduce_key(Key2), Key3]).
 
