@@ -10,25 +10,29 @@
 -export([wrap_frame/1, unwrap_frames/1]).
 
 -define(FRAME, "~m~").
+-define(GUID_PREFIX, "rabbitmq-").
 
--record(state, {framing, protocol_state, protocol}).
+-record(state, {framing, protocol_state, protocol, session}).
 
 init(Framing, Writer, Protocol) ->
     {ok, ProtocolState} = Protocol:init(rabbit_socks_socketio, {Framing, Writer}),
-    {ok, #state{framing = Framing,
+    Session = list_to_binary(rabbit_guid:string_guid(?GUID_PREFIX)),
+    send_frame({utf8, Session}, {Framing, Writer}),
+    {ok, #state{session = Session,
+                framing = Framing,
                 protocol_state = ProtocolState,
                 protocol = Protocol}}.
 
 handle_frame({utf8, Bin},
-             #state{protocol = Protocol,
-                    protocol_state = ProtocolState}) ->
+             State = #state{protocol = Protocol,
+                            protocol_state = ProtocolState}) ->
     ProtocolState1 = lists:foldl(
                        fun (Frame, PState) ->
                                {ok, PState1} =
                                    Protocol:handle_frame(Frame, PState),
                                PState1
                        end, ProtocolState, unwrap_frames(Bin)),
-    {ok, #state{ protocol_state = ProtocolState1}}.
+    {ok, State#state{ protocol_state = ProtocolState1}}.
 
 terminate(#state{protocol = Protocol, protocol_state = PState}) ->
     Protocol:terminate(PState).

@@ -4,7 +4,7 @@
 
 -export([start/1, start_listener/4]).
 
--define(WS_REV, "/tekcosbew/").
+-define(WS_REV, "tekcosbew/").
 
 start(Listeners) ->
     start_listeners(Listeners).
