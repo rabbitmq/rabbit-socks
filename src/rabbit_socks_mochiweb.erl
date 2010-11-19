@@ -4,6 +4,8 @@
 
 -export([start/1, start_listener/4]).
 
+-define(WS_REV, "/tekcosbew/").
+
 start(Listeners) ->
     start_listeners(Listeners).
 
@@ -34,7 +36,8 @@ loop(Req) ->
         Path = "/socket.io/" ++ Rest ->
             rabbit_io(Req, Path, Rest);
         Path = "/websocket/" ++ Rest ->
-            websocket(Req, Path, Rest, rabbit_socks_framing);
+            rabbit_ws(Req, Path, Rest),
+            exit(normal);
         "/" ++ Path ->
             {file, Here} = code:is_loaded(?MODULE),
             ModuleRoot = filename:dirname(filename:dirname(Here)),
@@ -43,56 +46,68 @@ loop(Req) ->
     end.
 
 rabbit_io(Req, Path, Rest) ->
-    case Rest of
-        "websocket/" ++ Rest ->
-            websocket(Req, Path, Rest, rabbit_socks_socketio_framing)
+    case lists:reverse(Rest) of
+        ?WS_REV ++ MaybeProtocol ->
+            case supported_protocol(lists:reverse(MaybeProtocol)) of
+                {ok, Name, Module} ->
+                    {ok, _Pid} = websocket(Req, Path, Name,
+                                           {rabbit_socks_socketio, Module}),
+                    exit(normal);
+                {error, Err} ->
+                    throw(Err)
+            end
     end.
 
-websocket(Req, Path, Rest, Framing) ->
-    case process_handshake(Req, Path, Rest) of
+rabbit_ws(Req, Path, Rest) ->
+    case ws_protocol(Req, Rest) of
+        {ok, ProtocolName, ProtocolModule} ->
+            {ok, _} = websocket(Req, Path, ProtocolName, ProtocolModule),
+            exit(normal);
+        {error, Err} ->
+            throw(Err)
+    end.
+
+websocket(Req, Path, ProtocolName, Protocol) ->
+    case process_handshake(Req, Path, ProtocolName) of
         {error, DoesNotCompute} ->
             close_error(Req),
             error_logger:info_msg("Connection refused: ~p", [DoesNotCompute]);
-        {response, Protocol, Headers, Body} ->
+        {response, Headers, Body} ->
             error_logger:info_msg("Connection accepted: ~p", [Req:get(peer)]),
             send_headers(Req, Headers),
             Req:send([Body]),
-            start_socket(Protocol, Req, Framing)
+            start_ws_socket(Protocol, Req)
     end.
 
 %% Process the request headers and work out what the response should be
-process_handshake(Req, Path, Sub) ->
+process_handshake(Req, Path, Protocol) ->
     Origin = Req:get_header_value("origin"),
     Host = Req:get_header_value("Host"),
     Location = "ws://localhost:5975" ++ Path,
     FirstBit = [{"Upgrade", "WebSocket"},
                 {"Connection", "Upgrade"}],
-    case protocol(Req, Sub) of
-        {ok, ProtName, ProtModule} ->
-            case Req:get_header_value("Sec-WebSocket-Key1") of
-                undefined ->
-                    {response, ProtModule, 
-                     FirstBit ++
-                         [{"WebSocket-Origin", Origin},
-                          {"WebSocket-Location", Location},
-                          {"WebSocket-Protocol", ProtName}],
-                     <<>>};
-                Key1 ->
-                    Key2 = Req:get_header_value("Sec-WebSocket-Key2"),
-                    Key3 = Req:recv(8),
-                    Hash = handshake_hash(Key1, Key2, Key3),
-                    {response, ProtModule,
-                     FirstBit ++
-                         [{"Sec-WebSocket-Origin", Origin},
-                          {"Sec-WebSocket-Location", Location},
-                          {"Sec-WebSocket-Protocol", ProtName}],
-                     Hash}
-            end;
-        {error, _} ->
-            {error, no_protocol_given}
+    case Req:get_header_value("Sec-WebSocket-Key1") of
+        undefined ->
+            {response, 
+             FirstBit ++
+                 [{"WebSocket-Origin", Origin},
+                  {"WebSocket-Location", Location},
+                  {"WebSocket-Protocol", Protocol}],
+             <<>>};
+        Key1 ->
+            Key2 = Req:get_header_value("Sec-WebSocket-Key2"),
+            Key3 = Req:recv(8),
+            Hash = handshake_hash(Key1, Key2, Key3),
+            {response,
+             FirstBit ++
+                 [{"Sec-WebSocket-Origin", Origin},
+                  {"Sec-WebSocket-Location", Location},
+                  {"Sec-WebSocket-Protocol", Protocol}],
+             Hash}
     end.
 
-protocol(Req, Path) ->
+%% FIXME baulk if the protocol is given but path isn't empty
+ws_protocol(Req, Path) ->
     Protocol = case Req:get_header_value("WebSocket-Protocol") of
                    undefined ->
                        case Req:get_header_value("Sec-WebSocket-Protocol") of
@@ -138,12 +153,12 @@ close_error(Req) ->
     Req:respond({400, [], ""}).
 
 %% Spin up a socket to deal with frames
-start_socket(Protocol, Req, Framing) ->
-    {ok, Pid} = rabbit_socks_connection_sup:start_connection(Protocol),
+start_ws_socket(Protocol, Req) ->
+    {ok, Pid} = rabbit_socks_connection_sup:start_connection(rabbit_socks_connection, Protocol),
     Sock = Req:get(socket),
     handover_socket(Sock, Pid),
-    gen_fsm:send_event(Pid, {socket_ready, Framing, Sock}),
-    exit(normal).
+    gen_fsm:send_event(Pid, {socket_ready, Sock}),
+    {ok, Pid}.
 
 handover_socket({ssl, Sock}, Pid) ->
     ssl:controlling_process(Sock, Pid);

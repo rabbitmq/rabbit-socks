@@ -10,30 +10,40 @@
 
 % Interface and states
 -export([start_link/1, wait_for_socket/2, wait_for_frame/2]).
--record(state, {protocol, protocol_state, framing, socket, parse_state}).
+-record(state, {protocol, protocol_args = undefined,
+                protocol_state, socket, parse_state}).
 
 start_link(Protocol) ->
     gen_fsm:start_link(?MODULE, [Protocol], []).
 
 % States
 
-wait_for_socket({socket_ready, Framing, Sock},
-                State = #state{ protocol = Protocol }) ->
+wait_for_socket({socket_ready, Sock},
+                State = #state{ protocol = Protocol,
+                                protocol_args = Args }) ->
     error_logger:info_msg("Connection opened ~p", [mochiweb_socket:peername(Sock)]),
     mochiweb_socket:setopts(Sock, [{active, once}]),
-    {ok, ProtocolState} = Protocol:init(Framing, Sock),
-    {next_state, wait_for_frame, State#state{protocol_state = ProtocolState,
-                                             framing = Framing, 
-                                             socket = Sock}};
+    %% If we're not doing any extra framing, we just want to send data
+    %% directly in WebSocket frames
+    
+    {ok, ProtocolState} =
+        case Args of
+            undefined -> Protocol:init(rabbit_socks_ws, Sock);
+            Args      -> Protocol:init(rabbit_socks_ws, Sock, Args)
+        end,
+    {next_state, wait_for_frame,
+     State#state{protocol_state = ProtocolState,
+                 parse_state = rabbit_socks_ws:initial_parse_state(),
+                 socket = Sock}};
 wait_for_socket(_Other, State) ->
     {next_state, wait_for_socket, State}.
 
 wait_for_frame({data, Data}, State = #state{
                                protocol_state = ProtocolState,
                                protocol = Protocol,
-                               parse_state = FrameState,
-                               socket = Sock}) ->
-    case rabbit_socks_framing:parse_frame(Data, FrameState) of
+                               socket = Sock,
+                               parse_state = ParseState}) ->
+    case rabbit_socks_ws:parse_frame(Data, ParseState) of
         {more, ParseState1} ->
             mochiweb_socket:setopts(Sock, [{active, once}]),
             {next_state, wait_for_frame, State#state{parse_state = ParseState1}};
@@ -41,7 +51,7 @@ wait_for_frame({data, Data}, State = #state{
             {ok, ProtocolState1} = Protocol:handle_frame(Frame, ProtocolState),
             wait_for_frame({data, Rest},
                            State#state{protocol_state = ProtocolState1,
-                                       parse_state = rabbit_socks_framing:initial_parse_state()})
+                                       parse_state = rabbit_socks_ws:initial_parse_state()})
     end;
 wait_for_frame(_Other, State) ->
     {next_state, wait_for_frame, State}.
@@ -49,8 +59,12 @@ wait_for_frame(_Other, State) ->
 %% gen_server callbacks
 
 init([Protocol]) ->
-    {ok, wait_for_socket, #state{protocol = Protocol,
-                                 parse_state = rabbit_socks_framing:initial_parse_state()}}.
+    {ok, wait_for_socket, case Protocol of
+                              {Module, Args} ->
+                                  #state{protocol = Module, protocol_args = Args};
+                              Module ->
+                                  #state{protocol = Module}
+                          end}.
 
 handle_event(Event, StateName, StateData) ->
     {stop, {StateName, undefined_event, Event}, StateData}.
@@ -60,7 +74,7 @@ handle_sync_event(Event, _From, StateName, StateData) ->
 handle_info({tcp, _Sock, Data}, State, StateData) ->
     ?MODULE:State({data, Data}, StateData);
 handle_info({tcp_closed, Socket}, _StateName,
-            #state{socket=Socket} = StateData) ->
+            #state{socket = Socket} = StateData) ->
     error_logger:info_msg("~p Client disconnected.\n", [self()]),
     {stop, normal, StateData};
 handle_info(_Info, StateName, StateData) ->

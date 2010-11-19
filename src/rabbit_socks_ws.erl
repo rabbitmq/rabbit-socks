@@ -1,6 +1,10 @@
--module(rabbit_socks_framing).
+-module(rabbit_socks_ws).
 
--export([initial_parse_state/0, parse_frame/2, send_frame/2]).
+%% Parser
+-export([initial_parse_state/0, parse_frame/2]).
+
+%% Writer
+-export([send_frame/2]).
 
 -record(parse, {type = unknown, fragments_rev = [], remaining = unknown}).
 
