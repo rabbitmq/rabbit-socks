@@ -11,14 +11,19 @@ start(Listeners) ->
 
 start_listeners([]) ->
     ok;
-start_listeners([{Host, Port, Options} | More]) ->
-    {IPAddress, Name} = rabbit_networking:check_tcp_listener_address(
-                          rabbit_socks_listener_sup,
-                          Host, Port),
-    supervisor:start_child(rabbit_socks_listener_sup,
-                           {Name,
-                            {?MODULE, start_listener, [Name, IPAddress, Port, Options]},
-                            transient, 10, worker, [rabbit_socks_mochiweb]}),
+start_listeners([{Listener, Options} | More]) ->
+    Specs = rabbit_networking:check_tcp_listener_address(
+              rabbit_socks_listener_sup, Listener),
+
+    [supervisor:start_child(rabbit_socks_listener_sup,
+                            {Name,
+                             {?MODULE, start_listener,
+                              [Name, IPAddress, Port, Options]},
+                             transient, 10, worker, [rabbit_socks_mochiweb]})
+     || {IPAddress, Port, _Family, Name} <- Specs],
+    %% Family is ignored, mochiweb claims to figure out IPv6 from the address
+    %% although it tests inet:getaddr("localhost", inet6) which does not
+    %% work on my machine...
     start_listeners(More).
 
 start_listener(Name, IPAddress, Port, Options) ->
