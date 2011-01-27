@@ -5,7 +5,7 @@ DEPS=rabbitmq-server rabbitmq-erlang-client rabbitmq-mochiweb
 EXTRA_PACKAGE_DIRS=priv
 
 START_RABBIT_IN_TESTS=true
-TEST_APPS=rabbit_socks
+TEST_APPS=inets mochiweb rabbit_socks
 TEST_SCRIPTS=./test/test.py
 UNIT_TEST_COMMANDS=eunit:test(rabbit_socks_test_util,[verbose])
 
