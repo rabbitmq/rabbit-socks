@@ -31,7 +31,8 @@
     </div>
     <script type="text/javascript">
       var sock = new io.Socket('localhost', {port: 5975,
-                                             resource: 'socket.io/echo'});
+                                             resource: 'socket.io/echo',
+                                             transports: ['websocket', 'xhr-polling']});
       var postbox = document.getElementById('postbox');
       var output = document.getElementById('output');
       

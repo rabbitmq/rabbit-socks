@@ -14,5 +14,8 @@ init([]) ->
           [{rabbit_socks_listener_sup,
             {rabbit_socks_listener_sup, start_link, []},
             transient, 5, supervisor, [rabbit_socks_listener_sup]},
-           {rabbit_socks_connection, {rabbit_socks_connection_sup, start_link, [rabbit_socks_connection]},
-            transient, 5, supervisor, [rabbit_socks_connection_sup]}]}}.
+           {rabbit_socks_websockets, {rabbit_socks_connection_sup, start_link, [rabbit_socks_ws_connection]},
+            transient, 5, supervisor, [rabbit_socks_connection_sup]},
+           {rabbit_socks_xhrpolling, {rabbit_socks_connection_sup, start_link, [rabbit_socks_xhrpolling]},
+            transient, 5, supervisor, [rabbit_socks_connection_sup]}
+          ]}}.

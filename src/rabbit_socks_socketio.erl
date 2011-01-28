@@ -14,14 +14,13 @@
 
 -record(state, {framing, protocol_state, protocol, session}).
 
-init(Framing, Writer, Protocol) ->
-    {ok, ProtocolState} = Protocol:init(rabbit_socks_socketio, {Framing, Writer}),
-    Session = list_to_binary(rabbit_guid:string_guid(?GUID_PREFIX)),
+init(Framing, Writer, {Session, BackingProtocol}) ->
+    {ok, ProtocolState} = BackingProtocol:init(rabbit_socks_socketio, {Framing, Writer}),
     send_frame({utf8, Session}, {Framing, Writer}),
     {ok, #state{session = Session,
                 framing = Framing,
                 protocol_state = ProtocolState,
-                protocol = Protocol}}.
+                protocol = BackingProtocol}}.
 
 handle_frame({utf8, Bin},
              State = #state{protocol = Protocol,
@@ -74,5 +73,5 @@ wrap_frame({utf8, Bin}) ->
             {error, incomplete_utf8_data, Bin};
         List ->
             LenStr = list_to_binary(integer_to_list(length(List))),
-            <<?FRAME, LenStr/binary, ?FRAME, Bin/binary>>
+            [?FRAME, LenStr, ?FRAME, List]
     end.

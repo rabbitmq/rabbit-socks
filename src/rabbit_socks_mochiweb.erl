@@ -4,9 +4,12 @@
 
 -export([start/1, start_listener/4]).
 
--define(WS_REV, "tekcosbew/").
+-define(CONNECTION_TABLE, socks_connections).
+-define(SESSION_PREFIX, "socks").
 
 start(Listeners) ->
+    %% FIXME each listener should have its own table
+    ets:new(?CONNECTION_TABLE, [public, named_table]),
     start_listeners(Listeners).
 
 start_listeners([]) ->
@@ -31,18 +34,28 @@ start_listener(Name, IPAddress, Port, Options) ->
                                      {port, Port}, {loop, fun loop/1} | Options]),
     rabbit_networking:tcp_listener_started(
       case proplists:get_bool(ssl, Options) of
-          true  -> 'http/websocket/socket.io (SSL)';
-          false -> 'http/websocket/socket.io'
+          true  -> 'websocket/socket.io (SSL)';
+          false -> 'websocket/socket.io'
       end, IPAddress, Port),
     {ok, Pid}.
+
+%% URL scheme:
+%% For websockets, we accept either of /websocket/<protocol> or using
+%% a header to determine the protocol.
+%%
+%% For socket.io, the client library will append
+%% /<transport>/<sessionid> to whatever prefix it is configured to
+%% use.  We want to be able to put the protocol somewhere, so we use a
+%% pattern /socket.io/<protocol>/<transport>/<sessionid>.  The client
+%% should always set the prefix to include the protocol, even if the
+%% transport is websockets.
 
 loop(Req) ->
     case Req:get(path) of
         Path = "/socket.io/" ++ Rest ->
             rabbit_io(Req, Path, Rest);
         Path = "/websocket/" ++ Rest ->
-            rabbit_ws(Req, Path, Rest),
-            exit(normal);
+            rabbit_ws(Req, Path, Rest);
         "/" ++ Path ->
             {file, Here} = code:is_loaded(?MODULE),
             ModuleRoot = filename:dirname(filename:dirname(Here)),
@@ -51,16 +64,58 @@ loop(Req) ->
     end.
 
 rabbit_io(Req, Path, Rest) ->
-    case lists:reverse(Rest) of
-        ?WS_REV ++ MaybeProtocol ->
-            case supported_protocol(lists:reverse(MaybeProtocol)) of
+    %io:format("Socket.IO ~p, ~p~n", [Req, Req:recv_body()]),
+    case re:split(Rest, "/", [{return, list}, trim]) of
+        [Protocol, "websocket"] ->
+            case supported_protocol(Protocol) of
                 {ok, Name, Module} ->
+                    Session = new_session_id(),
                     {ok, _Pid} = websocket(Req, Path, Name,
-                                           {rabbit_socks_socketio, Module}),
+                                           {rabbit_socks_socketio, {Session, Module}}),
                     exit(normal);
                 {error, Err} ->
                     throw(Err)
-            end
+            end;
+        [Protocol, PollingTransport, "", _Timestamp] ->
+            %io:format("New polling connection ~p ~p~n", [Protocol, PollingTransport]),
+            case supported_protocol(Protocol) of
+                {ok, Name, Module} ->
+                    case transport_module(PollingTransport) of
+                        {ok, Transport} ->
+                            Session = new_session_id(),
+                            {ok, _Pid} =
+                                polling(Transport, Req,
+                                        {rabbit_socks_socketio, {Session, Module}},
+                                        Session);
+                        {error, Err} ->
+                            Req:respond({404, [], "Bad transport"})
+                    end;
+                {error, Err} ->
+                    Req:respond({404, [], "Bad protocol"})
+            end;
+        [Protocol, Transport, Session, Operation] ->
+            %io:format("Existing connection ~p~n", [Session]),
+            case transport_module(Transport) of
+                {ok, TransportModule} ->
+                    case ets:lookup(?CONNECTION_TABLE, Session) of
+                        [{Session, TransportModule, Pid}] ->
+                            case Operation of
+                                "send" ->
+                                    %% NB: recv_body caches the body in the process
+                                    %% dictionary.  This must be done in the mochiweb
+                                    %% process to have any chance of working.
+                                    gen_server:call(Pid, {data, Req, Req:recv_body()});
+                                Timestamp ->
+                                    gen_server:call(Pid, {recv, Req})
+                            end;
+                        [] ->
+                            Req:not_found()
+                    end;
+                {error, Err} ->
+                    Req:respond({404, [], "Bad transport"})
+            end;
+        Else ->
+            Req:not_found()
     end.
 
 rabbit_ws(Req, Path, Rest) ->
@@ -84,16 +139,31 @@ websocket(Req, Path, ProtocolName, Protocol) ->
             start_ws_socket(Protocol, Req)
     end.
 
-%% Process the request headers and work out what the response should be
+polling(TransportModule, Req, Protocol, Session) ->
+    {ok, Pid} = rabbit_socks_connection_sup:start_connection(TransportModule,
+                                                             Protocol),
+    register_polling_connection(Session, TransportModule, Pid),
+    gen_server:call(Pid, {open, Req}),
+    gen_server:call(Pid, {recv, Req}),
+    {ok, Pid}.
+
+transport_module("xhr-polling") -> {ok, rabbit_socks_xhrpolling};
+transport_module(Else) -> {error, {unsupported_transport, Else}}.
+
+register_polling_connection(Session, Transport, Pid) ->
+    true = ets:insert_new(?CONNECTION_TABLE,
+                          {Session, Transport, Pid}).
+
 process_handshake(Req, Path, Protocol) ->
     Origin = Req:get_header_value("origin"),
     Host = Req:get_header_value("Host"),
+    %% FIXME un-hardcode -- clients expect something specific here
     Location = "ws://localhost:5975" ++ Path,
     FirstBit = [{"Upgrade", "WebSocket"},
                 {"Connection", "Upgrade"}],
     case Req:get_header_value("Sec-WebSocket-Key1") of
         undefined ->
-            {response, 
+            {response,
              FirstBit ++
                  [{"WebSocket-Origin", Origin},
                   {"WebSocket-Location", Location},
@@ -128,7 +198,7 @@ ws_protocol(Req, Path) ->
 
 supported_protocol(Prot) ->
     case string:to_lower(Prot) of
-        "echo"  -> {ok, Prot, rabbit_socks_echo}; 
+        "echo"  -> {ok, Prot, rabbit_socks_echo};
         "stomp" -> {ok, Prot, rabbit_socks_stomp};
         Else    -> {error, {unknown_protocol, Else}}
     end.
@@ -159,7 +229,8 @@ close_error(Req) ->
 
 %% Spin up a socket to deal with frames
 start_ws_socket(Protocol, Req) ->
-    {ok, Pid} = rabbit_socks_connection_sup:start_connection(rabbit_socks_connection, Protocol),
+    {ok, Pid} = rabbit_socks_connection_sup:start_connection(rabbit_socks_ws_connection,
+                                                             Protocol),
     Sock = Req:get(socket),
     handover_socket(Sock, Pid),
     gen_fsm:send_event(Pid, {socket_ready, Sock}),
@@ -169,3 +240,7 @@ handover_socket({ssl, Sock}, Pid) ->
     ssl:controlling_process(Sock, Pid);
 handover_socket(Sock, Pid) ->
     gen_tcp:controlling_process(Sock, Pid).
+
+new_session_id() ->
+    [ C || C <- rabbit_guid:string_guid(?SESSION_PREFIX),
+           C /= $+, C /= $=, C /= $/ ].
