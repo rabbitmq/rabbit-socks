@@ -11,29 +11,27 @@ if (!'io' in this) {
 	 } else {
 	     enc_props = JSON.stringify(props);
 	 }
-
 	 return ("" + enc_props.length + " " + enc_props +
 		 " " + msg.length + " " + msg);
      };
 
-     var getnumber = function(offset, data) {
+     var extract_first_integer = function(offset, data) {
 	 var str = data.substr(offset, 11);
 	 var nr = str.substring(0, str.indexOf(' '));
-	 return nr;
+	 return {'length': nr.length, 'value': Number(nr)};
      };
 
      var decode_message = function(raw_data) {
-	 var pos = 0;
-	 var pl = getnumber(pos, raw_data);
-	 pos += pl.length + 1;
-	 var raw_props = raw_data.substring(pos, pos + Number(pl));
-	 pos += Number(pl) + 1;
-	 var ml = getnumber(pos, raw_data);
+	 var pl = extract_first_integer(pos, raw_data);
+	 var pos = pl.length + 1;
+	 var json_props = raw_data.substring(pos, pos + pl.value);
+	 pos += pl.value + 1;
+	 var ml = extract_first_integer(pos, raw_data);
 	 pos += ml.length + 1;
-	 var msg = raw_data.substring(pos, pos + Number(ml));
+	 var msg = raw_data.substring(pos, pos + ml.value);
 	 var properties = undefined;
-	 if (raw_props.length > 0) {
-	     properties = JSON.parse(raw_props);
+	 if (json_props.length > 0) {
+	     properties = JSON.parse(json_props);
 	 }
 	 return {"properties": properties, "message": msg};
      };
@@ -42,12 +40,12 @@ if (!'io' in this) {
 	 var that = this;
 	 this.socket = socket;
 	 this.state = 'new';
-	 this.socket.on('connect', function(){
+	 this.socket.on('connect', function() {
 			    that._state_change(['connecting', 'connected'],
 					       'connected');
 			    that._try_flush_egress();
 			});
-	 this.socket.on('message', function(message){
+	 this.socket.on('message', function(message) {
 			    that._deliver_message(message);
 			});
 	 this.socket.on('disconnect', function() {
