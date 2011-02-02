@@ -128,9 +128,10 @@ ws_protocol(Req, Path) ->
 
 supported_protocol(Prot) ->
     case string:to_lower(Prot) of
-        "echo"  -> {ok, Prot, rabbit_socks_echo}; 
-        "stomp" -> {ok, Prot, rabbit_socks_stomp};
-        Else    -> {error, {unknown_protocol, Else}}
+        "echo"           -> {ok, Prot, rabbit_socks_echo};
+        "echo_multiplex" -> {ok, Prot, rabbit_socks_echo_multiplex};
+        "stomp"          -> {ok, Prot, rabbit_socks_stomp};
+        Else             -> {error, {unknown_protocol, Else}}
     end.
 
 handshake_hash(Key1, Key2, Key3) ->

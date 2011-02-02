@@ -32,8 +32,9 @@
     <div id="output">
     </div>
     <script type="text/javascript">
-      var sock = new io.Socket('localhost', {port: 5975,
-                                             resource: 'socket.io/echo'});
+      var sock = new io.Socket('localhost', {
+            port: 5975,
+            resource: 'socket.io/echo_multiplex'});
       var postbox = document.getElementById('postbox');
       var output = document.getElementById('output');
 

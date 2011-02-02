@@ -4,10 +4,9 @@ if (!'io' in this) {
 }
 
 (function(){
-     var encode_message = function(msg, props) {
+     var encode_message = function(props, msg) {
 	 var enc_props;
-	 if (props === undefined
-	     || props === null) {
+	 if (props === undefined || props === null) {
 	     enc_props = '';
 	 } else {
 	     enc_props = JSON.stringify(props);
@@ -36,7 +35,7 @@ if (!'io' in this) {
 	 if (raw_props.length > 0) {
 	     properties = JSON.parse(raw_props);
 	 }
-	 return {"message": msg, "properties": properties};
+	 return {"properties": properties, "message": msg};
      };
 
      io.RabbitIO = function (socket) {
@@ -100,7 +99,7 @@ if (!'io' in this) {
 	     }
 	 },
 	 'publish': function(token, message) {
-	     var raw_message = encode_message(message, {'channel': token});
+	     var raw_message = encode_message({'channel': token}, message);
 	     this.egress_buffer.push(raw_message);
 	     this._try_flush_egress();
 	 },
