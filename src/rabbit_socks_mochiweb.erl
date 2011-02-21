@@ -6,6 +6,7 @@
 
 -define(CONNECTION_TABLE, socks_connections).
 -define(SESSION_PREFIX, "socks").
+-define(CONTEXT_PREFIX, "socks").
 
 start(Listeners) ->
     %% FIXME each listener should have its own table
@@ -14,10 +15,14 @@ start(Listeners) ->
 
 start_listeners([]) ->
     ok;
+start_listeners([rabbit_mochiweb | More]) ->
+    start_listeners([{rabbit_mochiweb, '*', ?CONTEXT_PREFIX} | More]);
+start_listeners([{rabbit_mochiweb, Instance, Prefix} | More]) ->
+    register_with_rabbit_mochiweb(Instance, Prefix),
+    start_listeners(More);
 start_listeners([{Listener, Options} | More]) ->
     Specs = rabbit_networking:check_tcp_listener_address(
               rabbit_socks_listener_sup, Listener),
-
     [supervisor:start_child(rabbit_socks_listener_sup,
                             {Name,
                              {?MODULE, start_listener,
@@ -28,6 +33,12 @@ start_listeners([{Listener, Options} | More]) ->
     %% although it tests inet:getaddr("localhost", inet6) which does not
     %% work on my machine...
     start_listeners(More).
+
+%% TODO: when multi-mochiweb is verified, pay attention to the instance
+%% argument, and keep a note of the actual path returned.
+register_with_rabbit_mochiweb(Instance, Path) ->
+    rabbit_mochiweb:register_context_handler(
+      Path, fun loop/1, "Rabbit Socks").
 
 start_listener(Name, IPAddress, Port, Options) ->
     {ok, Pid} = mochiweb_http:start([{name, Name}, {ip, IPAddress},
@@ -52,11 +63,11 @@ start_listener(Name, IPAddress, Port, Options) ->
 
 loop(Req) ->
     case Req:get(path) of
-        Path = "/socket.io/" ++ Rest ->
+        Path = "/" ++ ?CONTEXT_PREFIX ++ "/socket.io/" ++ Rest ->
             rabbit_io(Req, Path, Rest);
-        Path = "/websocket/" ++ Rest ->
+        Path = "/" ++ ?CONTEXT_PREFIX ++ "/websocket/" ++ Rest ->
             rabbit_ws(Req, Path, Rest);
-        "/" ++ Path ->
+        "/" ++ ?CONTEXT_PREFIX ++ "/" ++ Path ->
             {file, Here} = code:is_loaded(?MODULE),
             ModuleRoot = filename:dirname(filename:dirname(Here)),
             Static = filename:join(filename:join(ModuleRoot, "priv"), "www"),
