@@ -81,7 +81,7 @@ rabbit_io(Req, Path, Rest) ->
             case supported_protocol(Protocol) of
                 {ok, Name, Module} ->
                     Session = new_session_id(),
-                    {ok, _Pid} = websocket(Req, Path, Name,
+                    {ok, _Pid} = websocket("http", Req, Path, Name,
                                            {rabbit_socks_socketio, {Session, Module}}),
                     exit(normal);
                 {error, Err} ->
@@ -132,14 +132,14 @@ rabbit_io(Req, Path, Rest) ->
 rabbit_ws(Req, Path, Rest) ->
     case ws_protocol(Req, Rest) of
         {ok, ProtocolName, ProtocolModule} ->
-            {ok, _} = websocket(Req, Path, ProtocolName, ProtocolModule),
+            {ok, _} = websocket("ws", Req, Path, ProtocolName, ProtocolModule),
             exit(normal);
         {error, Err} ->
             throw(Err)
     end.
 
-websocket(Req, Path, ProtocolName, Protocol) ->
-    case process_handshake(Req, Path, ProtocolName) of
+websocket(Scheme, Req, Path, ProtocolName, Protocol) ->
+    case process_handshake(Scheme, Req, Path, ProtocolName) of
         {error, DoesNotCompute} ->
             close_error(Req),
             error_logger:info_msg("Connection refused: ~p", [DoesNotCompute]);
@@ -165,11 +165,10 @@ register_polling_connection(Session, Transport, Pid) ->
     true = ets:insert_new(?CONNECTION_TABLE,
                           {Session, Transport, Pid}).
 
-process_handshake(Req, Path, Protocol) ->
-    Origin = Req:get_header_value("origin"),
+process_handshake(Scheme, Req, Path, Protocol) ->
+    Origin = Req:get_header_value("Origin"),
     Host = Req:get_header_value("Host"),
-    %% FIXME un-hardcode -- clients expect something specific here
-    Location = "ws://localhost:5975" ++ Path,
+    Location = make_location(Scheme, Req),
     FirstBit = [{"Upgrade", "WebSocket"},
                 {"Connection", "Upgrade"}],
     case Req:get_header_value("Sec-WebSocket-Key1") of
@@ -216,6 +215,12 @@ supported_protocol(Prot) ->
 
 handshake_hash(Key1, Key2, Key3) ->
     erlang:md5([reduce_key(Key1), reduce_key(Key2), Key3]).
+
+make_location(Scheme, Req) ->
+    Host = Req:get_header_value("Host"),
+    Resource = Req:get(raw_path),
+    mochiweb_util:urlunsplit(
+      {Scheme, Host, Resource, "", ""}).
 
 reduce_key(Key) when is_list(Key) ->
     {NumbersRev, NumSpaces} = lists:foldl(
