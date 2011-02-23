@@ -16,7 +16,7 @@
   ]},
   {registered, []},
   {mod, {rabbit_socks, []}},
-  {env, [{listeners, [rabbit_mochiweb]}]},
+  {env, [{listeners, [{rabbit_mochiweb, [{protocol, rabbit_socks_echo}]}]}]},
                       %%{{"127.0.0.1", 5975}, []},
                       %%{{"127.0.0.1", 5976}, [{ssl, true}]}]}]},
   {applications, [kernel, stdlib, rabbit, rabbit_mochiweb]}]}.

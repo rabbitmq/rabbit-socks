@@ -4,7 +4,9 @@
 -export([start_link/0]).
 
 %% Callbacks
--export([init/2, handle_frame/2, terminate/1]).
+-export([name/0, init/2, handle_frame/2, terminate/1]).
+
+name() -> "echo".
 
 start_link() ->
     rabbit_socks_connection_sup:start_link(?MODULE).
