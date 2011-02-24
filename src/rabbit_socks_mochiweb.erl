@@ -135,7 +135,8 @@ rabbit_io(Req, Protocol, Rest) ->
 
 rabbit_ws(Req, Protocol, Rest) ->
     PathElems = re:split(Rest, "/", [{return, list}, trim]),
-    {ok, _} = websocket("ws", Req, PathElems, Protocol).
+    {ok, _} = websocket("ws", Req, PathElems, Protocol),
+    exit(normal).
 
 websocket(Scheme, Req, PathElems, Protocol) ->
     case process_handshake(Scheme, Req, Protocol) of
