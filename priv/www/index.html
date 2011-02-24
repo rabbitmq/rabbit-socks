@@ -30,10 +30,12 @@
     <div id="output">
     </div>
     <script type="text/javascript">
-      var sock = new WebSocket('ws://localhost:5975/websocket/', 'echo');
+      var here = window.location.href;
+      var wsurl = here.replace("http", "ws");
+      var sock = new WebSocket(wsurl + 'websocket/', 'echo');
       var postbox = document.getElementById('postbox');
       var output = document.getElementById('output');
-      
+
       function send() {
         var msg = postbox.value;
         sock.send(msg);
@@ -45,11 +47,11 @@
         line.innerHTML = msg;
         output.appendChild(line);
       }
-      
+
       sock.onmessage = function(ev) { display(ev.data); };;
       sock.onopen = function() { display('<em>Connection open</em>'); };
       sock.onclose = function() { display('<em>Connection closed</em>'); };
-      
+
       //sock.connect();
     </script>
   </body>
