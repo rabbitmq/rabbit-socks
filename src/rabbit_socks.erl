@@ -17,10 +17,9 @@ start(normal, []) ->
         undefined ->
             throw({error, socks_no_listeners_given});
         {ok, Listeners} ->
-            io:format("starting ~s (binding to ~p) ...",
-                      ["Rabbit Socks", Listeners]),
-            ok = rabbit_socks_mochiweb:start(Listeners),
-            io:format("done~n")
+            error_logger:info_msg("starting ~s~nbinding to:~n~p",
+                                  ["Rabbit Socks", Listeners]),
+            ok = rabbit_socks_mochiweb:start(Listeners)
     end,
     {ok, SupPid}.
 
