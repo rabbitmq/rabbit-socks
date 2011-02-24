@@ -93,7 +93,7 @@ rabbit_io(Req, Protocol, Rest) ->
     case lists:reverse(re:split(Rest, "/", [{return, list}, trim])) of
         ["websocket" | PathElemsRev] -> %% i.e., in total /socket.io/<path>/websocket
             Session = new_session_id(),
-            {ok, _Pid} = websocket("http", Req, lists:reverse(PathElemsRev),
+            {ok, _Pid} = websocket(Req:get(scheme), Req, lists:reverse(PathElemsRev),
                                    {rabbit_socks_socketio, {Session, Protocol}}),
             exit(normal);
         [_Timestamp, "", PollingTransport | PathElemsRev] ->
@@ -135,7 +135,11 @@ rabbit_io(Req, Protocol, Rest) ->
 
 rabbit_ws(Req, Protocol, Rest) ->
     PathElems = re:split(Rest, "/", [{return, list}, trim]),
-    {ok, _} = websocket("ws", Req, PathElems, Protocol),
+    Scheme = case Req:get(socket) of
+                 {ssl, _Sock} -> "wss";
+                 _Sock        -> "ws"
+             end,
+    {ok, _} = websocket(Scheme, Req, PathElems, Protocol),
     exit(normal).
 
 websocket(Scheme, Req, PathElems, Protocol) ->
