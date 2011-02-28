@@ -43,7 +43,7 @@ start_listener(Listener, Subprotocol, Options) ->
 %% TODO: when multi-mochiweb is verified, pay attention to the instance
 %% argument, and keep a note of the actual path returned.
 register_with_rabbit_mochiweb(Instance, Path, Subprotocol) ->
-    Name = Subprotocol:name(),
+    Name = Subprotocol:subprotocol_name(),
     rabbit_mochiweb:register_context_handler(
       Path, makeloop(Subprotocol),
       io_lib:format("Rabbit Socks (~p)", [Name])).
@@ -160,7 +160,7 @@ websocket(Scheme, Req, PathElems, Subprotocol, SubprotocolMA) ->
 
 polling(TransportModule, Req, PathElems, SubprotocolMA, Session) ->
     {ok, Pid} = rabbit_socks_connection_sup:start_connection(TransportModule,
-                                                             SubprotocolMA),
+                                                             SubprotocolMA, PathElems),
     register_polling_connection(Session, TransportModule, Pid),
     gen_server:call(Pid, {open, Req}),
     gen_server:call(Pid, {recv, Req}),
@@ -174,7 +174,7 @@ register_polling_connection(Session, Transport, Pid) ->
                           {Session, Transport, Pid}).
 
 process_handshake(Scheme, Req, Subprotocol) ->
-    ProtocolName = Subprotocol:name(),
+    ProtocolName = Subprotocol:subprotocol_name(),
     Origin = Req:get_header_value("Origin"),
     Location = make_location(Scheme, Req),
     FirstBit = [{"Upgrade", "WebSocket"},

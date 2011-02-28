@@ -3,11 +3,13 @@
 -export([start_link/0]).
 
 %% callbacks
--export([init/2, open/3, handle_frame/2, terminate/1]).
+-export([subprotocol_name/0, init/2, open/3, handle_frame/2, terminate/1]).
 
 %% Start supervisor
 start_link() ->
     rabbit_socks_connection_sup:start_link(?MODULE).
+
+subprotocol_name() -> "STOMP".
 
 %% Spin up STOMP frame processor
 init(_Path, []) ->
