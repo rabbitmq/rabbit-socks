@@ -9,29 +9,22 @@
          terminate/3, code_change/4]).
 
 % Interface and states
--export([start_link/1, wait_for_socket/2, wait_for_frame/2]).
--record(state, {protocol, protocol_args = undefined,
-                protocol_state, socket, parse_state}).
+-export([start_link/2, wait_for_socket/2, wait_for_frame/2]).
+-record(state, {protocol, protocol_state, socket, parse_state}).
 
-start_link(Protocol) ->
-    gen_fsm:start_link(?MODULE, [Protocol], []).
+start_link(Protocol, Path) ->
+    gen_fsm:start_link(?MODULE, [Protocol, Path], []).
 
 % States
 
 wait_for_socket({socket_ready, Sock},
                 State = #state{ protocol = Protocol,
-                                protocol_args = Args }) ->
+                                protocol_state = ProtocolState0 }) ->
+    {ok, ProtocolState} = Protocol:open(rabbit_socks_ws, Sock, ProtocolState0),
     mochiweb_socket:setopts(Sock, [{active, once}]),
-    %% If we're not doing any extra framing, we just want to send data
-    %% directly in WebSocket frames
-    {ok, ProtocolState} =
-        case Args of
-            undefined -> Protocol:init(rabbit_socks_ws, Sock);
-            Args      -> Protocol:init(rabbit_socks_ws, Sock, Args)
-        end,
     {next_state, wait_for_frame,
-     State#state{protocol_state = ProtocolState,
-                 parse_state = rabbit_socks_ws:initial_parse_state(),
+     State#state{parse_state = rabbit_socks_ws:initial_parse_state(),
+                 protocol_state = ProtocolState,
                  socket = Sock}};
 wait_for_socket(_Other, State) ->
     {next_state, wait_for_socket, State}.
@@ -54,15 +47,16 @@ wait_for_frame({data, Data}, State = #state{
 wait_for_frame(_Other, State) ->
     {next_state, wait_for_frame, State}.
 
-%% gen_event callbacks
+%% gen_fsm callbacks
 
-init([Protocol]) ->
-    {ok, wait_for_socket, case Protocol of
-                              {Module, Args} ->
-                                  #state{protocol = Module, protocol_args = Args};
-                              Module ->
-                                  #state{protocol = Module}
-                          end}.
+init([{Protocol, Args}, Path]) ->
+    case Protocol:init(Path, Args) of
+        {ok, ProtocolState} ->
+            {ok, wait_for_socket,
+             #state{protocol = Protocol, protocol_state = ProtocolState}};
+        Err ->
+            Err
+    end.
 
 handle_event(Event, StateName, StateData) ->
     {stop, {StateName, undefined_event, Event}, StateData}.

@@ -1,7 +1,7 @@
 -module(rabbit_socks_socketio).
 
 %% Protocol
--export([init/3, handle_frame/2, terminate/1]).
+-export([init/2, open/3, handle_frame/2, terminate/1]).
 
 %% Writer
 -export([send_frame/2]).
@@ -10,17 +10,27 @@
 -export([wrap_frame/1, unwrap_frames/1]).
 
 -define(FRAME, "~m~").
--define(GUID_PREFIX, "rabbitmq-").
+-define(GUID_PREFIX, "socks-").
 
 -record(state, {framing, protocol_state, protocol, session}).
 
-init(Framing, Writer, {Session, BackingProtocol}) ->
-    {ok, ProtocolState} = BackingProtocol:init(rabbit_socks_socketio, {Framing, Writer}),
-    send_frame({utf8, Session}, {Framing, Writer}),
-    {ok, #state{session = Session,
-                framing = Framing,
-                protocol_state = ProtocolState,
-                protocol = BackingProtocol}}.
+init(Path, [Session, Subprotocol]) ->
+    case Subprotocol:init(Path, []) of
+        {ok, ProtocolState} ->
+            {ok, #state{session = Session,
+                        protocol_state = ProtocolState,
+                        protocol = Subprotocol}};
+        Err ->
+            Err
+    end.
+
+open(WriterModule, WriterArg,
+     State = #state{ protocol = Protocol,
+                     protocol_state = ProtocolState0 }) ->
+    {ok, ProtocolState} = Protocol:open(rabbit_socks_socketio,
+                                        {WriterModule, WriterArg},
+                                        ProtocolState0),
+    {ok, State#state{ protocol_state = ProtocolState }}.
 
 handle_frame({utf8, Bin},
              State = #state{protocol = Protocol,

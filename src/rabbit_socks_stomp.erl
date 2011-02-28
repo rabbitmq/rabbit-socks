@@ -3,16 +3,19 @@
 -export([start_link/0]).
 
 %% callbacks
--export([init/2, handle_frame/2, terminate/1]).
+-export([init/2, open/3, handle_frame/2, terminate/1]).
 
 %% Start supervisor
 start_link() ->
     rabbit_socks_connection_sup:start_link(?MODULE).
 
 %% Spin up STOMP frame processor
-init(Writer, Arg) ->
+init(_Path, []) ->
+    {ok, undefined}.
+
+open(Writer, WriterArg, undefined) ->
     gen_server:start_link(rabbit_stomp_processor,
-                          [{Writer, Arg}], []).
+                          [{Writer, WriterArg}], []).
 
 terminate(Pid) ->
     %% FIXME

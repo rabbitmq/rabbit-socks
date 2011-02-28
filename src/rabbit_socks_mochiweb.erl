@@ -19,37 +19,38 @@ start_listeners([{Interface, Options} | More]) ->
     case proplists:get_value(protocol, Options, undefined) of
         undefined ->
             exit({no_protocol, Options});
-        Protocol ->
-            start_listener(Interface, Protocol, Options),
+        Subprotocol ->
+            start_listener(Interface, Subprotocol, Options),
             start_listeners(More)
     end.
 
-start_listener(rabbit_mochiweb, Protocol, Options) ->
-    start_listener({rabbit_mochiweb, '*', ?CONTEXT_PREFIX}, Protocol, Options);
-start_listener({rabbit_mochiweb, Instance, Prefix}, Protocol, Options) ->
-    register_with_rabbit_mochiweb(Instance, Prefix, Protocol);
+start_listener(rabbit_mochiweb, Subprotocol, Options) ->
+    start_listener({rabbit_mochiweb, '*',
+                    ?CONTEXT_PREFIX}, Subprotocol, Options);
+start_listener({rabbit_mochiweb, Instance, Prefix}, Subprotocol, Options) ->
+    register_with_rabbit_mochiweb(Instance, Prefix, Subprotocol);
 
-start_listener(Listener, Protocol, Options) ->
+start_listener(Listener, Subprotocol, Options) ->
     Specs = rabbit_networking:check_tcp_listener_address(
               rabbit_socks_listener_sup, Listener),
     [supervisor:start_child(rabbit_socks_listener_sup,
                             {Name,
                              {?MODULE, start_mochiweb_listener,
-                              [Name, IPAddress, Port, Protocol, Options]},
+                              [Name, IPAddress, Port, Subprotocol, Options]},
                              transient, 10, worker, [rabbit_socks_mochiweb]})
      || {IPAddress, Port, _Family, Name} <- Specs].
 
 %% TODO: when multi-mochiweb is verified, pay attention to the instance
 %% argument, and keep a note of the actual path returned.
-register_with_rabbit_mochiweb(Instance, Path, Protocol) ->
-    Name = Protocol:name(),
+register_with_rabbit_mochiweb(Instance, Path, Subprotocol) ->
+    Name = Subprotocol:name(),
     rabbit_mochiweb:register_context_handler(
-      Path, makeloop(Protocol),
+      Path, makeloop(Subprotocol),
       io_lib:format("Rabbit Socks (~p)", [Name])).
 
-start_mochiweb_listener(Name, IPAddress, Port, Protocol, Options) ->
+start_mochiweb_listener(Name, IPAddress, Port, Subprotocol, Options) ->
     {ok, Pid} = mochiweb_http:start([{name, Name}, {ip, IPAddress},
-                                     {port, Port}, {loop, makeloop(Protocol)}
+                                     {port, Port}, {loop, makeloop(Subprotocol)}
                                      | Options]),
     rabbit_networking:tcp_listener_started(
       case proplists:get_bool(ssl, Options) of
@@ -72,14 +73,14 @@ start_mochiweb_listener(Name, IPAddress, Port, Protocol, Options) ->
 %% use.  Therefore our pattern, for connection initiation, is
 %% /socket.io/<path>/<transport>/<sessionid>.
 
-makeloop(Protocol) ->
+makeloop(Subprotocol) ->
     fun (Req) ->
             Path = Req:get(path),
             case Path of
                 "/" ++ ?CONTEXT_PREFIX ++ "/socket.io/" ++ Rest ->
-                    rabbit_io(Req, Protocol, Rest);
+                    rabbit_io(Req, Subprotocol, Rest);
                 "/" ++ ?CONTEXT_PREFIX ++ "/websocket" ++ Rest ->
-                    rabbit_ws(Req, Protocol, Rest);
+                    rabbit_ws(Req, Subprotocol, Rest);
                 "/" ++ ?CONTEXT_PREFIX ++ "/" ++ RelPath ->
                     {file, Here} = code:is_loaded(?MODULE),
                     ModuleRoot = filename:dirname(filename:dirname(Here)),
@@ -88,13 +89,16 @@ makeloop(Protocol) ->
             end
     end.
 
-rabbit_io(Req, Protocol, Rest) ->
+rabbit_io(Req, Subprotocol, Rest) ->
     %io:format("Socket.IO ~p, ~p~n", [Req, Req:recv_body()]),
     case lists:reverse(re:split(Rest, "/", [{return, list}, trim])) of
         ["websocket" | PathElemsRev] -> %% i.e., in total /socket.io/<path>/websocket
             Session = new_session_id(),
-            {ok, _Pid} = websocket(Req:get(scheme), Req, lists:reverse(PathElemsRev),
-                                   {rabbit_socks_socketio, {Session, Protocol}}),
+            {ok, _Pid} = websocket(Req:get(scheme), Req,
+                                   lists:reverse(PathElemsRev),
+                                   Subprotocol,
+                                   %% Wrap the subprotocol in Socket.IO framing
+                                   {rabbit_socks_socketio, [Session, Subprotocol]}),
             exit(normal);
         [_Timestamp, "", PollingTransport | PathElemsRev] ->
             %io:format("New polling connection ~p ~p~n", [Protocol, PollingTransport]),
@@ -103,7 +107,7 @@ rabbit_io(Req, Protocol, Rest) ->
                     Session = new_session_id(),
                     {ok, _Pid} =
                         polling(Transport, Req, lists:reverse(PathElemsRev),
-                                {rabbit_socks_socketio, {Session, Protocol}},
+                                {rabbit_socks_socketio, [Session, Subprotocol]},
                                 Session);
                 {error, Err} ->
                     Req:respond({404, [], "Bad transport"})
@@ -133,17 +137,17 @@ rabbit_io(Req, Protocol, Rest) ->
             Req:not_found()
     end.
 
-rabbit_ws(Req, Protocol, Rest) ->
+rabbit_ws(Req, Subprotocol, Rest) ->
     PathElems = re:split(Rest, "/", [{return, list}, trim]),
     Scheme = case Req:get(socket) of
                  {ssl, _Sock} -> "wss";
                  _Sock        -> "ws"
              end,
-    {ok, _} = websocket(Scheme, Req, PathElems, Protocol),
+    {ok, _} = websocket(Scheme, Req, PathElems, Subprotocol, {Subprotocol, []}),
     exit(normal).
 
-websocket(Scheme, Req, PathElems, Protocol) ->
-    case process_handshake(Scheme, Req, Protocol) of
+websocket(Scheme, Req, PathElems, Subprotocol, SubprotocolMA) ->
+    case process_handshake(Scheme, Req, Subprotocol) of
         {error, DoesNotCompute} ->
             close_error(Req),
             error_logger:info_msg("Connection refused: ~p", [DoesNotCompute]);
@@ -151,12 +155,12 @@ websocket(Scheme, Req, PathElems, Protocol) ->
             error_logger:info_msg("Connection accepted: ~p", [Req:get(peer)]),
             send_headers(Req, Headers),
             Req:send([Body]),
-            start_ws_socket(Protocol, Req, PathElems)
+            start_ws_socket(SubprotocolMA, Req, PathElems)
     end.
 
-polling(TransportModule, Req, PathElems, Protocol, Session) ->
+polling(TransportModule, Req, PathElems, SubprotocolMA, Session) ->
     {ok, Pid} = rabbit_socks_connection_sup:start_connection(TransportModule,
-                                                             Protocol),
+                                                             SubprotocolMA),
     register_polling_connection(Session, TransportModule, Pid),
     gen_server:call(Pid, {open, Req}),
     gen_server:call(Pid, {recv, Req}),
@@ -169,8 +173,8 @@ register_polling_connection(Session, Transport, Pid) ->
     true = ets:insert_new(?CONNECTION_TABLE,
                           {Session, Transport, Pid}).
 
-process_handshake(Scheme, Req, Protocol) ->
-    ProtocolName = Protocol:name(),
+process_handshake(Scheme, Req, Subprotocol) ->
+    ProtocolName = Subprotocol:name(),
     Origin = Req:get_header_value("Origin"),
     Location = make_location(Scheme, Req),
     FirstBit = [{"Upgrade", "WebSocket"},
@@ -219,16 +223,17 @@ reduce_key(Key) when is_list(Key) ->
 
 %% Write the headers to the response
 send_headers(Req, Headers) ->
-    Req:start_raw_response({"101 Web Socket Protocol Handshake", mochiweb_headers:from_list(Headers)}).
+    Req:start_raw_response({"101 Web Socket Protocol Handshake",
+                            mochiweb_headers:from_list(Headers)}).
 
 %% Close the connection with an error.
 close_error(Req) ->
     Req:respond({400, [], ""}).
 
 %% Spin up a socket to deal with frames
-start_ws_socket(Protocol, Req, PathElems) ->
-    {ok, Pid} = rabbit_socks_connection_sup:start_connection(rabbit_socks_ws_connection,
-                                                             Protocol),
+start_ws_socket(SubprotocolMA, Req, PathElems) ->
+    {ok, Pid} = rabbit_socks_connection_sup:start_connection(
+                  rabbit_socks_ws_connection, SubprotocolMA, PathElems),
     Sock = Req:get(socket),
     handover_socket(Sock, Pid),
     gen_fsm:send_event(Pid, {socket_ready, Sock}),

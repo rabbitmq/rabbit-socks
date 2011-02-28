@@ -5,15 +5,15 @@
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_cast/2, handle_call/3]).
 
--export([start_link/1, send_frame/2]).
+-export([start_link/2, send_frame/2]).
 
 -record(state, {protocol, protocol_args, protocol_state,
                pending_frames, pending_request}).
 
 %% Interface
 
-start_link(Protocol) ->
-    gen_server:start_link(?MODULE, [Protocol], []).
+start_link(ProtocolMA, Path) ->
+    gen_server:start_link(?MODULE, [ProtocolMA, Path], []).
 
 send_frame({utf8, Data}, Pid) ->
     gen_server:cast(Pid, {send, Data}),
@@ -21,12 +21,17 @@ send_frame({utf8, Data}, Pid) ->
 
 %% Callbacks
 
-init([{Protocol, Args}]) ->
+init([{Protocol, Args}, Path]) ->
     %io:format("XHR polling started: ~p", [Protocol]),
-    {ok, #state{protocol = Protocol,
-                protocol_args = Args,
-                pending_frames = [],
-                pending_request = none}}.
+    case Protocol:init(Path, Args) of
+        {ok, ProtocolState} ->
+            {ok, #state{protocol = Protocol,
+                        protocol_state = ProtocolState,
+                        pending_frames = [],
+                        pending_request = none}};
+        Err ->
+            Err
+    end.
 
 terminate(normal, #state{protocol = Protocol, protocol_state = PState}) ->
     ok = Protocol:terminate(PState),
@@ -35,8 +40,8 @@ terminate(normal, #state{protocol = Protocol, protocol_state = PState}) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-handle_info(_Any, State) ->
-    throw("Unexpected message received").
+handle_info(Any, State) ->
+    {stop, {unexpect_info, Any}, State}.
 
 handle_cast({send, Data}, State = #state{pending_frames = Frames,
                                          pending_request = Req}) ->
@@ -49,16 +54,17 @@ handle_cast({send, Data}, State = #state{pending_frames = Frames,
             {noreply, State#state{pending_frames = [],
                                   pending_request = none}}
     end;
-handle_cast(_Any, State) ->
-    throw("Not implemented").
+handle_cast(Any, State) ->
+    {stop, {unexpected_cast, Any}, State}.
 
-handle_call({open, Req}, _From, State = #state{protocol = Protocol,
-                                               protocol_args = Args}) ->
-    {ok, ProtocolState} =
-        Protocol:init(rabbit_socks_xhrpolling, self(), Args),
-    {reply, ok, State#state{protocol_state = ProtocolState}};
+handle_call({open, _Req}, _From,
+            State = #state{ protocol = Protocol,
+                            protocol_state = ProtocolState0 }) ->
+    {ok, ProtocolState} = Protocol:open(
+                            rabbit_socks_xhrpolling, self(), ProtocolState0),
+    {reply, ok, State#state{ protocol_state = ProtocolState }};
 handle_call({data, Req, Data0}, _From, State = #state{protocol = Protocol,
-                                                     protocol_state = PState}) ->
+                                                      protocol_state = PState}) ->
     {_, Data} = proplists:lookup("data", mochiweb_util:parse_qs(Data0)),
     %io:format("Incoming: ~p~n", [Data]),
     {ok, PState1} = Protocol:handle_frame({utf8, Data}, PState),
@@ -74,5 +80,5 @@ handle_call({recv, Req}, _From, State = #state{pending_frames = Frames}) ->
             Req:respond({200, [], lists:reverse(Frames)}),
             {reply, ok, State#state{pending_frames = []}}
     end;
-handle_call(_Any, State, From) ->
-    throw("Not implemented").
+handle_call(Any, From, State) ->
+    {stop, {unexpected_call, Any, From}, State}.

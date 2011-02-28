@@ -6,7 +6,7 @@
 -export([init/1]).
 
 % Interface
--export([start_link/1, start_connection/2]).
+-export([start_link/1, start_connection/3]).
 
 %% We have a supervisor for each front-end, i.e., each implementation
 %% of connection.  This way we can parameterise on the connection
@@ -17,13 +17,13 @@
 init([ConnectionType]) ->
     {ok, {{simple_one_for_one, 10, 10},
           [{undefined, {ConnectionType, start_link, []},
-           transient, 5, worker, [ConnectionType]}]}}.
+           transient, 50, worker, [ConnectionType]}]}}.
 
 %% Start a supervisor for connections using module ConnectionType
 start_link(ConnectionType) ->
     supervisor:start_link({local, ConnectionType}, ?MODULE, [ConnectionType]).
 
 %% Start a connection using the simple_one_for_one mechanism
-start_connection(ConnectionType, Protocol) ->
-    error_logger:info_msg("Starting connection ~p with ~p~n", [ConnectionType, Protocol]),
-    supervisor:start_child(ConnectionType, [Protocol]).
+start_connection(ConnectionType, Protocol, Path) ->
+    error_logger:info_msg("Starting connection ~p with ~p at ~p~n", [ConnectionType, Protocol, Path]),
+    supervisor:start_child(ConnectionType, [Protocol, Path]).
