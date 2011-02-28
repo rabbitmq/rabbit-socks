@@ -137,7 +137,11 @@ rabbit_io(Req, Subprotocol, Rest) ->
             Req:not_found()
     end.
 
-rabbit_ws(Req, Subprotocol, Rest) ->
+rabbit_ws(Req, Subprotocol, Rest0) ->
+    Rest = case Rest0 of
+               "/" ++ R -> R;
+               R        -> R
+           end,
     PathElems = re:split(Rest, "/", [{return, list}, trim]),
     Scheme = case Req:get(socket) of
                  {ssl, _Sock} -> "wss";
