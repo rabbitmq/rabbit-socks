@@ -15,7 +15,7 @@ init(_Path, []) ->
     {ok, undefined}.
 
 open(WriterModule, Writer, undefined) ->
-    {Writer, WriterModule}.
+    {ok, {WriterModule, Writer}}.
 
 terminate({_Module, _Writer}) ->
     ok.
