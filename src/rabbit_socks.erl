@@ -3,6 +3,8 @@
 -behaviour(application).
 
 -export([start/2, stop/1]).
+%% For other apps to drive rabbit-socks
+-export([start_listener/3]).
 
 start(normal, []) ->
     {ok, SupPid} = rabbit_socks_sup:start_link(),
@@ -18,3 +20,6 @@ start(normal, []) ->
 
 stop(_State) ->
     ok.
+
+start_listener(ListenerSpec, Subprotocol, Options) ->
+    rabbit_socks_mochiweb:start_listener(ListenerSpec, Subprotocol, Options).

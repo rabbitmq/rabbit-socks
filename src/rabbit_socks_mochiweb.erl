@@ -2,7 +2,9 @@
 
 %% Start a mochiweb server and supply frames to registered interpreters.
 
--export([start/1, start_mochiweb_listener/5]).
+-export([start/1, start_listener/3]).
+%% For rabbit_socks_listener_sup callback
+-export([start_mochiweb_listener/5]).
 
 -define(CONNECTION_TABLE, socks_connections).
 -define(SESSION_PREFIX, "socks").
