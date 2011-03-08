@@ -8,7 +8,8 @@
 
 -define(CONNECTION_TABLE, socks_connections).
 -define(SESSION_PREFIX, "socks").
--define(CONTEXT_PREFIX, "socks").
+-define(DEFAULT_PREFIX, "socks").
+-define(CONTEXT, socks).
 
 start(Listeners) ->
     %% FIXME each listener should have its own table
@@ -27,10 +28,10 @@ start_listeners([{Interface, Options} | More]) ->
     end.
 
 start_listener(rabbit_mochiweb, Subprotocol, Options) ->
-    start_listener({rabbit_mochiweb, '*',
-                    ?CONTEXT_PREFIX}, Subprotocol, Options);
-start_listener({rabbit_mochiweb, Instance, Prefix}, Subprotocol, Options) ->
-    register_with_rabbit_mochiweb(Instance, Prefix, Subprotocol);
+    start_listener({rabbit_mochiweb, ?DEFAULT_PREFIX},
+                   Subprotocol, Options);
+start_listener({rabbit_mochiweb, Prefix}, Subprotocol, Options) ->
+    register_with_rabbit_mochiweb(Prefix, Subprotocol);
 
 start_listener(Listener, Subprotocol, Options) ->
     Specs = rabbit_networking:check_tcp_listener_address(
@@ -42,12 +43,12 @@ start_listener(Listener, Subprotocol, Options) ->
                              transient, 10, worker, [rabbit_socks_mochiweb]})
      || {IPAddress, Port, _Family, Name} <- Specs].
 
-%% TODO: when multi-mochiweb is verified, pay attention to the instance
-%% argument, and keep a note of the actual path returned.
-register_with_rabbit_mochiweb(Instance, Path, Subprotocol) ->
+%% TODO: when using multi-context rabbit-mochi, account for not
+%% getting the supplied prefix
+register_with_rabbit_mochiweb(Path, Subprotocol) ->
     Name = Subprotocol:subprotocol_name(),
     rabbit_mochiweb:register_context_handler(
-      Path, makeloop(Subprotocol),
+      ?CONTEXT, Path, makeloop(Subprotocol),
       io_lib:format("Rabbit Socks (~p)", [Name])).
 
 start_mochiweb_listener(Name, IPAddress, Port, Subprotocol, Options) ->
@@ -79,11 +80,11 @@ makeloop(Subprotocol) ->
     fun (Req) ->
             Path = Req:get(path),
             case Path of
-                "/" ++ ?CONTEXT_PREFIX ++ "/socket.io/" ++ Rest ->
+                "/" ++ ?DEFAULT_PREFIX ++ "/socket.io/" ++ Rest ->
                     rabbit_io(Req, Subprotocol, Rest);
-                "/" ++ ?CONTEXT_PREFIX ++ "/websocket" ++ Rest ->
+                "/" ++ ?DEFAULT_PREFIX ++ "/websocket" ++ Rest ->
                     rabbit_ws(Req, Subprotocol, Rest);
-                "/" ++ ?CONTEXT_PREFIX ++ "/" ++ RelPath ->
+                "/" ++ ?DEFAULT_PREFIX ++ "/" ++ RelPath ->
                     {file, Here} = code:is_loaded(?MODULE),
                     ModuleRoot = filename:dirname(filename:dirname(Here)),
                     Static = filename:join(filename:join(ModuleRoot, "priv"), "www"),
