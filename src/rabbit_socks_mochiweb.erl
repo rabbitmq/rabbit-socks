@@ -77,14 +77,18 @@ start_mochiweb_listener(Name, IPAddress, Port, Subprotocol, Options) ->
 %% /socket.io/<path>/<transport>/<sessionid>.
 
 makeloop(Subprotocol) ->
-    fun (Req) ->
+    fun ({Prefix, _}, Req) ->
             Path = Req:get(path),
-            case Path of
-                "/" ++ ?DEFAULT_PREFIX ++ "/socket.io/" ++ Rest ->
+            case string:substr(Path, length(Prefix) + 2) of
+                "/socket.io/" ++ Rest ->
                     rabbit_io(Req, Subprotocol, Rest);
-                "/" ++ ?DEFAULT_PREFIX ++ "/websocket" ++ Rest ->
+                "/websocket" ++ Rest ->
                     rabbit_ws(Req, Subprotocol, Rest);
-                "/" ++ ?DEFAULT_PREFIX ++ "/" ++ RelPath ->
+                RelPath0 ->
+                    RelPath = case RelPath0 of
+                                  ""       -> "";
+                                  "/" ++ P -> P
+                              end,
                     {file, Here} = code:is_loaded(?MODULE),
                     ModuleRoot = filename:dirname(filename:dirname(Here)),
                     Static = filename:join(filename:join(ModuleRoot, "priv"), "www"),
