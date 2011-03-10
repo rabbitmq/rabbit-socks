@@ -48,12 +48,13 @@ start_listener(Listener, Subprotocol, Options) ->
 register_with_rabbit_mochiweb(Path, Subprotocol) ->
     Name = Subprotocol:subprotocol_name(),
     rabbit_mochiweb:register_context_handler(
-      ?CONTEXT, Path, makeloop(Subprotocol),
+      ?CONTEXT, Path, makeloop_rabbit_mochiweb(Subprotocol),
       io_lib:format("Rabbit Socks (~p)", [Name])).
 
 start_mochiweb_listener(Name, IPAddress, Port, Subprotocol, Options) ->
     {ok, Pid} = mochiweb_http:start([{name, Name}, {ip, IPAddress},
-                                     {port, Port}, {loop, makeloop(Subprotocol)}
+                                     {port, Port},
+                                     {loop, makeloop_just_mochiweb(Subprotocol)}
                                      | Options]),
     rabbit_networking:tcp_listener_started(
       case proplists:get_bool(ssl, Options) of
@@ -76,24 +77,32 @@ start_mochiweb_listener(Name, IPAddress, Port, Subprotocol, Options) ->
 %% use.  Therefore our pattern, for connection initiation, is
 %% /socket.io/<path>/<transport>/<sessionid>.
 
-makeloop(Subprotocol) ->
+makeloop_rabbit_mochiweb(Subprotocol) ->
     fun ({Prefix, _}, Req) ->
             Path = Req:get(path),
-            case string:substr(Path, length(Prefix) + 2) of
-                "/socket.io/" ++ Rest ->
-                    rabbit_io(Req, Subprotocol, Rest);
-                "/websocket" ++ Rest ->
-                    rabbit_ws(Req, Subprotocol, Rest);
-                RelPath0 ->
-                    RelPath = case RelPath0 of
-                                  ""       -> "";
-                                  "/" ++ P -> P
-                              end,
-                    {file, Here} = code:is_loaded(?MODULE),
-                    ModuleRoot = filename:dirname(filename:dirname(Here)),
-                    Static = filename:join(filename:join(ModuleRoot, "priv"), "www"),
-                    Req:serve_file(RelPath, Static)
-            end
+            dispatch(string:substr(Path, length(Prefix) + 2), Req, Subprotocol)
+    end.
+
+makeloop_just_mochiweb(Subprotocol) ->
+    fun (Req) ->
+            dispatch(Req:get(path), Req, Subprotocol)
+    end.
+
+dispatch(Path, Req, Subprotocol) ->
+    case Path  of
+        "/socket.io/" ++ Rest ->
+            rabbit_io(Req, Subprotocol, Rest);
+        "/websocket" ++ Rest ->
+            rabbit_ws(Req, Subprotocol, Rest);
+        RelPath0 ->
+            RelPath = case RelPath0 of
+                          ""       -> "";
+                          "/" ++ P -> P
+                      end,
+            {file, Here} = code:is_loaded(?MODULE),
+            ModuleRoot = filename:dirname(filename:dirname(Here)),
+            Static = filename:join(filename:join(ModuleRoot, "priv"), "www"),
+            Req:serve_file(RelPath, Static)
     end.
 
 rabbit_io(Req, Subprotocol, Rest) ->
