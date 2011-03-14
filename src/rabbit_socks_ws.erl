@@ -16,6 +16,8 @@ initial_parse_state() ->
 
 parse_frame(<<>>, Parse) ->
     {more, Parse};
+parse_frame(<<255, 0, _Rest/binary>>, Parse) ->
+    {close, Parse};
 parse_frame(<<?TEXT_FRAME_START, Rest/binary>>,
             Parse = #parse{type = unknown,
                            fragments_rev = [],
