@@ -29,10 +29,11 @@ wait_for_socket({socket_ready, Sock},
                                 protocol_state = ProtocolState0 }) ->
     {ok, ProtocolState} = Protocol:open(rabbit_socks_ws, Sock, ProtocolState0),
     mochiweb_socket:setopts(Sock, [{active, once}]),
-    {next_state, wait_for_frame,
-     State#state{parse_state = rabbit_socks_ws:initial_parse_state(),
-                 protocol_state = ProtocolState,
-                 socket = Sock}}.
+    State1 = State#state{parse_state = rabbit_socks_ws:initial_parse_state(),
+                         protocol_state = ProtocolState,
+                         socket = Sock},
+    error_logger:info_msg("Connection started ~p~n", [i(State1)]),
+    {next_state, wait_for_frame, State1}.
 
 wait_for_frame({data, Data}, State = #state{
                                protocol_state = ProtocolState,
@@ -45,6 +46,7 @@ wait_for_frame({data, Data}, State = #state{
             {next_state, wait_for_frame, State#state{parse_state = ParseState1}};
         {close, _ParseState1} ->
             %% TODO really necessary to reset here?
+            error_logger:info_msg("Client initiated close ~p~n", [i(State)]),
             State1 = State#state{ parse_state = rabbit_socks_ws:initial_parse_state() },
             {stop, normal, close_connection(State1)};
         {frame, Frame, Rest} ->
@@ -54,9 +56,10 @@ wait_for_frame({data, Data}, State = #state{
                              protocol_state = ProtocolState1,
                              parse_state = rabbit_socks_ws:initial_parse_state()})
     end;
-wait_for_frame({close, Reason}, State = #state{ socket = Sock }) ->
-    %% TODO set close timer here?
-    {next_state, close_sent, send_close(initiate_close(State))};
+wait_for_frame({close, Reason}, State) ->
+    error_logger:info_msg("Server initiated close ~p~n", [i(State)]),
+    State1 = terminate_protocol(State),
+    {next_state, close_sent, send_close(initiate_close(State1))};
 wait_for_frame(_Other, State) ->
     {next_state, wait_for_frame, State}.
 
@@ -68,7 +71,7 @@ close_sent({data, Data}, State = #state{ parse_state = ParseState,
             {next_state, close_sent, State#state{ parse_state = ParseState1 }};
         {close, _ParseState} ->
             {stop, normal, finalise_connection(State)};
-        {frame, Frame, Rest} ->
+        {frame, _Frame, Rest} ->
             close_sent({data, Rest},
                        State#state{
                          parse_state = rabbit_socks_ws:initial_parse_state()})
@@ -85,19 +88,34 @@ initiate_close(State) ->
     State.
 
 send_close(State = #state {
-             socket = Socket,
-             protocol = Protocol,
-             protocol_state = ProtocolState }) ->
-    ok = Protocol:terminate(ProtocolState),
+             socket = Socket }) ->
     mochiweb_socket:send(Socket, <<255,0>>),
     State.
 
-close_connection(State = #state{ socket = Socket }) ->
+close_connection(State) ->
     finalise_connection(send_close(State)).
 
 finalise_connection(State = #state{ socket = Socket }) ->
     mochiweb_socket:close(Socket),
     State#state{ socket = closed }.
+
+terminate_protocol(State = #state{ protocol_state = undefined }) ->
+    State;
+terminate_protocol(State = #state{ protocol = Protocol,
+                                   protocol_state = ProtocolState }) ->
+    ok = Protocol:terminate(ProtocolState),
+    State#state { protocol_state = undefined }.
+
+%% info for log messages
+
+i(#state{ socket = closed, protocol = Protocol }) ->
+    { Protocol, closed };
+i(#state{ socket = Socket, protocol = Protocol }) ->
+    { Protocol, socket_info(Socket) }.
+
+socket_info(Socket) ->
+    { mochiweb_socket:peername(Socket),
+      mochiweb_socket:port(Socket)}.
 
 %% gen_fsm callbacks
 
@@ -105,8 +123,9 @@ init([{Protocol, Args}, Path]) ->
     process_flag(trap_exit, true),
     case Protocol:init(Path, Args) of
         {ok, ProtocolState} ->
-            {ok, wait_for_socket,
-             #state{protocol = Protocol, protocol_state = ProtocolState}};
+            State1 = #state{protocol = Protocol,
+                            protocol_state = ProtocolState},
+            {ok, wait_for_socket, State1};
         Err ->
             Err
     end.
@@ -118,15 +137,20 @@ handle_sync_event(Event, _From, StateName, StateData) ->
 
 handle_info({tcp, _Sock, Data}, State, StateData) ->
     ?MODULE:State({data, Data}, StateData);
-handle_info({tcp_closed, Socket}, _StateName,
+handle_info({tcp_closed, Socket}, StateName,
             #state{socket = Socket} = StateData) ->
-    {stop, normal, StateData};
+    error_logger:warning_msg("Connection unexpectedly dropped (in ~p)",
+                             [StateName]),
+    {stop, normal, terminate_protocol(StateData)};
 handle_info(Info, StateName, StateData) ->
-    {stop, {unexpected_info, Info}, StateData}.
+    {stop, {unexpected_info, StateName, Info}, StateData}.
 
-terminate(_Reason, _StateName, #state{socket = closed}) ->
-    ok;
-terminate(_Reason, _StateName, #state{socket = Socket}) ->
+%% If things happened cleanly, the protocol shoudl already be shut
+%% down. However, if we crashed, we should tell it.
+terminate(_Reason, _StateName, S = #state{socket = closed}) ->
+    terminate_protocol(S);
+terminate(_Reason, _StateName, S = #state{socket = Socket}) ->
+    terminate_protocol(S),
     case catch mochiweb_socket:close(Socket) of
         _ -> ok
     end.
