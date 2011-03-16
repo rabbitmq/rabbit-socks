@@ -30,12 +30,14 @@
     <div id="output">
     </div>
     <script type="text/javascript">
-      var sock = new io.Socket('localhost', {port: 5975,
-                                             resource: 'socket.io/echo',
+      var here = window.location.pathname.substring(1);
+      var sockurl = here.substring(0, here.lastIndexOf('/') + 1) + 'socket.io';
+
+      var sock = new io.Socket('localhost', {resource: sockurl,
                                              transports: ['websocket', 'xhr-polling']});
       var postbox = document.getElementById('postbox');
       var output = document.getElementById('output');
-      
+
       function send() {
         var msg = postbox.value;
         sock.send(msg);
@@ -47,11 +49,11 @@
         line.innerHTML = msg;
         output.appendChild(line);
       }
-      
+
       sock.on('message', function(ev) { display(ev); });
       sock.on('connect', function() { display('<em>Connection open</em>');});
       sock.on('disconnect', function() { display('<em>Connection closed</em>'); });
-      
+
       sock.connect();
     </script>
   </body>
