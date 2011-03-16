@@ -96,7 +96,7 @@ rabbit_io(Req, Subprotocol, Rest) ->
     case lists:reverse(re:split(Rest, "/", [{return, list}, trim])) of
         ["websocket" | PathElemsRev] -> %% i.e., in total /socket.io/<path>/websocket
             Session = new_session_id(),
-            {ok, _Pid} = websocket(Req:get(scheme), Req,
+            {ok, _Pid} = websocket(atom_to_list(Req:get(scheme)), Req,
                                    lists:reverse(PathElemsRev),
                                    Subprotocol,
                                    %% Wrap the subprotocol in Socket.IO framing
