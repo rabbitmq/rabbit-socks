@@ -86,4 +86,6 @@ wrap_frame({utf8, Bin}) ->
         List ->
             LenStr = list_to_binary(integer_to_list(length(List))),
             [?FRAME, LenStr, ?FRAME, List]
-    end.
+    end;
+wrap_frame(IoList) ->
+    wrap_frame({utf8, iolist_to_binary(IoList)}).
