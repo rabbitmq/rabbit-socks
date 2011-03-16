@@ -26,10 +26,12 @@ init(Path, [Session, Subprotocol]) ->
 
 open(WriterModule, WriterArg,
      State = #state{ protocol = Protocol,
-                     protocol_state = ProtocolState0 }) ->
+                     protocol_state = ProtocolState0,
+                     session = Session}) ->
     {ok, ProtocolState} = Protocol:open(rabbit_socks_socketio,
                                         {WriterModule, WriterArg},
                                         ProtocolState0),
+    send_frame({utf8, list_to_binary(Session)}, {WriterModule, WriterArg}),
     {ok, State#state{ protocol_state = ProtocolState }}.
 
 handle_frame({utf8, Bin},

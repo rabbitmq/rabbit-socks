@@ -50,7 +50,7 @@ handle_cast({send, Data}, State = #state{pending_frames = Frames,
         none ->
             {noreply, State#state{pending_frames = [Data | Frames]}};
         Req ->
-            Req:respond({200, [], lists:reverse([ Data | Frames])}),
+            Req:respond({200, get_headers(), lists:reverse([ Data | Frames])}),
             {noreply, State#state{pending_frames = [],
                                   pending_request = none}}
     end;
@@ -68,7 +68,7 @@ handle_call({data, Req, Data0}, _From, State = #state{protocol = Protocol,
     {_, Data} = proplists:lookup("data", mochiweb_util:parse_qs(Data0)),
     %io:format("Incoming: ~p~n", [Data]),
     {ok, PState1} = Protocol:handle_frame({utf8, Data}, PState),
-    Req:respond({200, [], "ok"}),
+    Req:respond({200, get_headers(), "ok"}),
     {reply, ok, State#state{protocol_state = PState1}};
 handle_call({recv, Req}, _From, State = #state{pending_frames = Frames}) ->
     %io:format("Recv: ~p~n", [Frames]),
@@ -77,8 +77,12 @@ handle_call({recv, Req}, _From, State = #state{pending_frames = Frames}) ->
             %% TODO set timer
             {reply, ok, State#state{pending_request = Req}};
         Frames ->
-            Req:respond({200, [], lists:reverse(Frames)}),
+            Req:respond({200, get_headers(), lists:reverse(Frames)}),
             {reply, ok, State#state{pending_frames = []}}
     end;
 handle_call(Any, From, State) ->
     {stop, {unexpected_call, Any, From}, State}.
+
+
+get_headers() ->
+    [{"Access-Control-Allow-Origin", "*"}].
