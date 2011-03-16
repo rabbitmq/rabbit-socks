@@ -91,12 +91,20 @@ makeloop(Subprotocol) ->
             end
     end.
 
+fix_scheme(Scheme) ->
+    case Scheme of
+        http ->
+            "ws";
+        https ->
+            "wss"
+    end.
+
 rabbit_io(Req, Subprotocol, Rest) ->
     %io:format("Socket.IO ~p, ~p~n", [Req, Req:recv_body()]),
     case lists:reverse(re:split(Rest, "/", [{return, list}, trim])) of
         ["websocket" | PathElemsRev] -> %% i.e., in total /socket.io/<path>/websocket
             Session = new_session_id(),
-            {ok, _Pid} = websocket(atom_to_list(Req:get(scheme)), Req,
+            {ok, _Pid} = websocket(fix_scheme(Req:get(scheme)), Req,
                                    lists:reverse(PathElemsRev),
                                    Subprotocol,
                                    %% Wrap the subprotocol in Socket.IO framing
