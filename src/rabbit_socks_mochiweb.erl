@@ -99,6 +99,13 @@ fix_scheme(Scheme) ->
             "wss"
     end.
 
+send_ajax_options(Req) ->
+    Headers = [{"Access-Control-Allow-Origin", "*"},
+               {"Access-Control-Allow-Methods", "POST, GET, OPTIONS"},
+               {"Access-Control-Allow-Headers",
+                "X-Requested-With, Content-Type, Accept"}],
+    Req:respond({200, mochiweb_headers:from_list(Headers), ""}).
+
 rabbit_io(Req, Subprotocol, Rest) ->
     %io:format("Socket.IO ~p, ~p~n", [Req, Req:recv_body()]),
     case lists:reverse(re:split(Rest, "/", [{return, list}, trim])) of
@@ -133,7 +140,12 @@ rabbit_io(Req, Subprotocol, Rest) ->
                                     %% NB: recv_body caches the body in the process
                                     %% dictionary.  This must be done in the mochiweb
                                     %% process to have any chance of working.
-                                    gen_server:call(Pid, {data, Req, Req:recv_body()});
+                                    case Req:get(method) of
+                                        'OPTIONS' ->
+                                            send_ajax_options(Req);
+                                        _ ->
+                                            gen_server:call(Pid, {data, Req, Req:recv_body()})
+                                    end;
                                 Timestamp ->
                                     gen_server:call(Pid, {recv, Req})
                             end;
