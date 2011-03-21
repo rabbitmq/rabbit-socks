@@ -61,7 +61,6 @@ unwrap_frames(Bin) ->
 unwrap_frames_unicode([], Acc) ->
     lists:reverse(Acc);
 unwrap_frames_unicode(Frame, Acc) ->
-    io:format("unwrap_frames ~p~n", [Frame]),
     case Frame of
         ?FRAME ++ Rest ->
             {LenStr, Rest1} = lists:splitwith(fun rabbit_socks_util:is_digit/1,
@@ -73,11 +72,9 @@ unwrap_frames_unicode(Frame, Acc) ->
                     BinData = unicode:characters_to_binary(Data, utf8),
                     unwrap_frames_unicode(Rest3, [{utf8, BinData} | Acc]);
                 _Else ->
-                    io:format("malformed_frame1 ~s~n", [Frame]),
                     {error, malformed_frame, Frame}
             end;
         _Else ->
-            io:format("malformed_frame2 ~s~n", [Frame]),
             {error, malformed_frame, Frame}
     end.
 
