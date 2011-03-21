@@ -68,10 +68,7 @@ unwrap_frames1(Frame, Acc) ->
             Length = list_to_integer(LenStr),
             case Rest1 of
                 ?FRAME ++ Rest2 ->
-                    {Data, Rest3} = case length(Rest2) of
-                                        Length -> {Rest2, []};
-                                        _ -> lists:split(Rest2, Length)
-                                    end,
+                    {Data, Rest3} = lists:split(Length, Rest2),
                     BinData = unicode:characters_to_binary(Data, utf8),
                     unwrap_frames1(Rest3, [{utf8, BinData} | Acc]);
                 _Else ->
