@@ -56,33 +56,29 @@ send_frame(Frame, {Underlying, Writer}) ->
 unwrap_frames(Bin) when is_list(Bin) ->
     unwrap_frames(unicode:characters_to_binary(Bin, utf8));
 unwrap_frames(Bin) ->
-    unwrap_frames1(Bin, []).
+    unwrap_frames1(unicode:characters_to_list(Bin, utf8), []).
 
-unwrap_frames1(<<>>, Acc) ->
+unwrap_frames1([], Acc) ->
     lists:reverse(Acc);
-unwrap_frames1(Bin, Acc) ->
-    case Bin of
-        <<?FRAME, Rest/binary>> ->
-            {LenStr, Rest1} =
-                rabbit_socks_util:binary_splitwith(
-                  fun rabbit_socks_util:is_digit/1, Rest),
-            Length = list_to_integer(binary_to_list(LenStr)),
-
+unwrap_frames1(Frame, Acc) ->
+    case Frame of
+        ?FRAME ++ Rest ->
+            {LenStr, Rest1} = lists:splitwith(fun rabbit_socks_util:is_digit/1,
+                                              Rest),
+            Length = list_to_integer(LenStr),
             case Rest1 of
-                <<?FRAME, Rest2/binary>> ->
-                    Decoded = unicode:characters_to_list(Rest2),
-                    {DData, DRest3} = case length(Decoded) of
-                                          Length -> {Decoded, []};
-                                          _ -> lists:split(Decoded, Length)
-                                      end,
-                    Data = unicode:characters_to_binary(DData),
-                    Rest3 = unicode:characters_to_binary(DRest3),
-                    unwrap_frames1(Rest3, [{utf8, Data} | Acc]);
+                ?FRAME ++ Rest2 ->
+                    {Data, Rest3} = case length(Rest2) of
+                                        Length -> {Rest2, []};
+                                        _ -> lists:split(Rest2, Length)
+                                    end,
+                    BinData = unicode:characters_to_binary(Data, utf8),
+                    unwrap_frames1(Rest3, [{utf8, BinData} | Acc]);
                 _Else ->
-                    {error, malformed_frame, Bin}
+                    {error, malformed_frame, Frame}
             end;
         _Else ->
-            {error, malformed_frame, Bin}
+            {error, malformed_frame, Frame}
     end.
 
 wrap_frame({utf8, Bin}) ->
