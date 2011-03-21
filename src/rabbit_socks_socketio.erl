@@ -67,9 +67,17 @@ unwrap_frames1(Bin, Acc) ->
                 rabbit_socks_util:binary_splitwith(
                   fun rabbit_socks_util:is_digit/1, Rest),
             Length = list_to_integer(binary_to_list(LenStr)),
+
             case Rest1 of
-                <<?FRAME, Data:Length/binary, Rest2/binary>> ->
-                    unwrap_frames1(Rest2, [{utf8, Data} | Acc]);
+                <<?FRAME, Rest2/binary>> ->
+                    Decoded = unicode:characters_to_list(Rest2),
+                    {DData, DRest3} = case length(Decoded) of
+                                          Length -> {Decoded, []};
+                                          _ -> lists:split(Decoded, Length)
+                                      end,
+                    Data = unicode:characters_to_binary(DData),
+                    Rest3 = unicode:characters_to_binary(DRest3),
+                    unwrap_frames1(Rest3, [{utf8, Data} | Acc]);
                 _Else ->
                     {error, malformed_frame, Bin}
             end;
