@@ -53,14 +53,15 @@ send_frame(Frame, {Underlying, Writer}) ->
     Wrapped = wrap_frame(Frame),
     Underlying:send_frame({utf8, Wrapped}, Writer).
 
-unwrap_frames(Bin) when is_list(Bin) ->
-    unwrap_frames(unicode:characters_to_binary(Bin, utf8));
+unwrap_frames(List) when is_list(List) ->
+    unwrap_frames(iolist_to_binary(List));
 unwrap_frames(Bin) ->
-    unwrap_frames1(unicode:characters_to_list(Bin, utf8), []).
+    unwrap_frames_unicode(unicode:characters_to_list(Bin, utf8), []).
 
-unwrap_frames1([], Acc) ->
+unwrap_frames_unicode([], Acc) ->
     lists:reverse(Acc);
-unwrap_frames1(Frame, Acc) ->
+unwrap_frames_unicode(Frame, Acc) ->
+    io:format("unwrap_frames ~p~n", [Frame]),
     case Frame of
         ?FRAME ++ Rest ->
             {LenStr, Rest1} = lists:splitwith(fun rabbit_socks_util:is_digit/1,
@@ -70,11 +71,13 @@ unwrap_frames1(Frame, Acc) ->
                 ?FRAME ++ Rest2 ->
                     {Data, Rest3} = lists:split(Length, Rest2),
                     BinData = unicode:characters_to_binary(Data, utf8),
-                    unwrap_frames1(Rest3, [{utf8, BinData} | Acc]);
+                    unwrap_frames_unicode(Rest3, [{utf8, BinData} | Acc]);
                 _Else ->
+                    io:format("malformed_frame1 ~s~n", [Frame]),
                     {error, malformed_frame, Frame}
             end;
         _Else ->
+            io:format("malformed_frame2 ~s~n", [Frame]),
             {error, malformed_frame, Frame}
     end.
 
