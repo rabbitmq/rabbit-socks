@@ -44,13 +44,14 @@ handle_info(Any, State) ->
     {stop, {unexpect_info, Any}, State}.
 
 handle_cast({send, Data}, State = #state{pending_frames = Frames,
-                                         pending_request = Req}) ->
+                                         pending_request = Pending}) ->
     %io:format("Sent: ~p~n", [Data]),
-    case Req of
+    case Pending of
         none ->
             {noreply, State#state{pending_frames = [Data | Frames]}};
-        Req ->
+        {Req, From} ->
             Req:respond({200, get_headers(), lists:reverse([ Data | Frames])}),
+            gen_server:reply(From, ok),
             {noreply, State#state{pending_frames = [],
                                   pending_request = none}}
     end;
@@ -70,12 +71,12 @@ handle_call({data, Req, Data0}, _From, State = #state{protocol = Protocol,
     {ok, PState1} = Protocol:handle_frame({utf8, Data}, PState),
     Req:respond({200, get_headers(), "ok"}),
     {reply, ok, State#state{protocol_state = PState1}};
-handle_call({recv, Req}, _From, State = #state{pending_frames = Frames}) ->
+handle_call({recv, Req}, From, State = #state{pending_frames = Frames}) ->
     %io:format("Recv: ~p~n", [Frames]),
     case Frames of
         [] ->
             %% TODO set timer
-            {reply, ok, State#state{pending_request = Req}};
+            {noreply, State#state{pending_request = {Req, From}}};
         Frames ->
             Req:respond({200, get_headers(), lists:reverse(Frames)}),
             {reply, ok, State#state{pending_frames = []}}

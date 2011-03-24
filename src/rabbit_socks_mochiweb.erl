@@ -147,7 +147,8 @@ rabbit_io(Req, Subprotocol, Rest) ->
                                             gen_server:call(Pid, {data, Req, Req:recv_body()})
                                     end;
                                 Timestamp ->
-                                    gen_server:call(Pid, {recv, Req})
+                                    %% Long poll.
+                                    gen_server:call(Pid, {recv, Req}, infinity)
                             end;
                         [] ->
                             Req:not_found()
