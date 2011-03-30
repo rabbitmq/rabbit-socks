@@ -5,7 +5,7 @@
 -export([init/1, terminate/2, code_change/3]).
 -export([handle_info/2, handle_cast/2, handle_call/3]).
 
--export([start_link/2, send_frame/2]).
+-export([start_link/2, send_frame/2, close_transport/1]).
 
 -record(state, {protocol, protocol_args, protocol_state,
                pending_frames, pending_request}).
@@ -17,6 +17,10 @@ start_link(ProtocolMA, Path) ->
 
 send_frame({utf8, Data}, Pid) ->
     gen_server:cast(Pid, {send, Data}),
+    ok.
+
+close_transport(Pid) ->
+    gen_server:cast(Pid, close_transport),
     ok.
 
 %% Callbacks
@@ -55,6 +59,16 @@ handle_cast({send, Data}, State = #state{pending_frames = Frames,
             {noreply, State#state{pending_frames = [],
                                   pending_request = none}}
     end;
+
+handle_cast(close_transport, State = #state{pending_request = Pending}) ->
+    case Pending of
+        none -> ok;
+        {OldReq, OldFrom} ->
+            OldReq:respond({200, get_headers(), []}),
+            gen_server:reply(OldFrom, ok)
+    end,
+    {stop, normal, State#state{pending_request = none}};
+
 handle_cast(Any, State) ->
     {stop, {unexpected_cast, Any}, State}.
 
@@ -85,6 +99,7 @@ handle_call({recv, Req}, From, State = #state{pending_frames = Frames,
     end,
     case Frames of
         [] ->
+            %% TODO: is it possible to catch socket-close event?
             {noreply, State#state{pending_request = {Req, From}}};
         Frames ->
             Req:respond({200, get_headers(), lists:reverse(Frames)}),

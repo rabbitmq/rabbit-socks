@@ -4,7 +4,7 @@
 -export([initial_parse_state/0, parse_frame/2]).
 
 %% Writer
--export([send_frame/2]).
+-export([send_frame/2, close_transport/1]).
 
 -record(parse, {type = unknown, fragments_rev = [], remaining = unknown}).
 
@@ -45,3 +45,8 @@ send_frame({utf8, Data}, Sock) ->
     send_frame(Data, Sock);
 send_frame(IoList, Sock) ->
     mochiweb_socket:send(Sock, [<<?TEXT_FRAME_START>>, IoList, <<?TEXT_FRAME_END>>]).
+
+close_transport(Sock) ->
+    %% TODO: mikeb doesn't like gen_tcp:close
+    %% mochiweb_socket:close(Sock).
+    ok.

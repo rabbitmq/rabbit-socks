@@ -4,7 +4,7 @@
 -export([init/2, open/3, handle_frame/2, terminate/1]).
 
 %% Writer
--export([send_frame/2]).
+-export([send_frame/2, close_transport/1]).
 
 %% ---------------------------
 
@@ -51,6 +51,10 @@ send_frame(Frame, RightState) ->
     gen_server:cast(RightState, {send, Frame}),
     {ok, RightState}.
 
+close_transport(RightState) ->
+    gen_server:cast(RightState, close_transport),
+    {ok, RightState}.
+
 %% ---------------------------
 
 send_heartbeat(Pid) ->
@@ -93,8 +97,7 @@ handle_cast({handle_frame, {utf8, Bin}},
                           PState;
                       _ ->
                           {ok, PState1} =
-                              RightProtocol:handle_frame(
-                                Frame, PState),
+                              RightProtocol:handle_frame(Frame, PState),
                           PState1
                   end
           end,
@@ -105,6 +108,11 @@ handle_cast({handle_frame, {utf8, Bin}},
 
 handle_cast({send, Frame}, State) ->
     do_send_frame(Frame, State),
+    {noreply, State};
+
+handle_cast(close_transport,
+            State = #state{left_callback = {WriterModule, WriterArg}}) ->
+    WriterModule:close_transport(WriterArg),
     {noreply, State};
 
 handle_cast(Any, State) ->
