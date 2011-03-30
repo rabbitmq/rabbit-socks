@@ -71,15 +71,25 @@ handle_call({data, Req, Data0}, _From, State = #state{protocol = Protocol,
     {ok, PState1} = Protocol:handle_frame({utf8, Data}, PState),
     Req:respond({200, get_headers(), "ok"}),
     {reply, ok, State#state{protocol_state = PState1}};
-handle_call({recv, Req}, From, State = #state{pending_frames = Frames}) ->
+handle_call({recv, Req}, From, State = #state{pending_frames = Frames,
+                                              pending_request = Pending}) ->
     %io:format("Recv: ~p~n", [Frames]),
+    case Pending of
+        none -> ok;
+        {OldReq, OldFrom} ->
+            %% Although unlikely, it's possible to have more than one
+            %% hanging request. We don't support that. Instead let's
+            %% just finish the previous one with an empty response.
+            OldReq:respond({200, get_headers(), []}),
+            gen_server:reply(OldFrom, ok)
+    end,
     case Frames of
         [] ->
-            %% TODO set timer
             {noreply, State#state{pending_request = {Req, From}}};
         Frames ->
             Req:respond({200, get_headers(), lists:reverse(Frames)}),
-            {reply, ok, State#state{pending_frames = []}}
+            {reply, ok, State#state{pending_frames = [],
+                                    pending_request = none}}
     end;
 handle_call(Any, From, State) ->
     {stop, {unexpected_call, Any, From}, State}.
