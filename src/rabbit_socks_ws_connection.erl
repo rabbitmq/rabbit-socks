@@ -27,7 +27,8 @@ close(Pid, Reason) ->
 wait_for_socket({socket_ready, Sock},
                 State = #state{ protocol = Protocol,
                                 protocol_state = ProtocolState0 }) ->
-    {ok, ProtocolState} = Protocol:open(rabbit_socks_ws, Sock, ProtocolState0),
+    {ok, ProtocolState} = Protocol:open(rabbit_socks_ws, {self(), Sock},
+                                        ProtocolState0),
     mochiweb_socket:setopts(Sock, [{active, once}]),
     State1 = State#state{parse_state = rabbit_socks_ws:initial_parse_state(),
                          protocol_state = ProtocolState,

@@ -41,12 +41,10 @@ parse_utf8_frame(Bin, Parse = #parse{type = utf8,
             parse_utf8_frame(Bin, Parse, Index + 1)
     end.
 
-send_frame({utf8, Data}, Sock) ->
-    send_frame(Data, Sock);
-send_frame(IoList, Sock) ->
+send_frame({utf8, Data}, Args) ->
+    send_frame(Data, Args);
+send_frame(IoList, {Pid, Sock}) ->
     mochiweb_socket:send(Sock, [<<?TEXT_FRAME_START>>, IoList, <<?TEXT_FRAME_END>>]).
 
-close_transport(Sock) ->
-    %% TODO: mikeb doesn't like gen_tcp:close
-    %% mochiweb_socket:close(Sock).
-    ok.
+close_transport({Pid, Sock}) ->
+    rabbit_socks_ws_connection:close(Pid, "die!").
