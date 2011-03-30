@@ -16,6 +16,14 @@
 
 %% ---------------------------
 
+-export([send_heartbeat/1]).
+
+-define(FRAME, "~m~").
+-define(HEARTBEAT_DELAY, 15000).
+-define(HEARTBEAT_FRAME, {utf8, <<"~h~1">>}).
+
+%% ---------------------------
+
 init(Path, [Session, RightProtocol]) ->
     process_flag(trap_exit, true),
     case RightProtocol:init(Path, []) of
@@ -28,7 +36,7 @@ init(Path, [Session, RightProtocol]) ->
     end.
 
 open(WriterModule, WriterArg, LeftState) ->
-    gen_server:call(LeftState, {open, {WriterModule, WriterArg}} ,infinity),
+    gen_server:call(LeftState, {open, {WriterModule, WriterArg}}, infinity),
     {ok, LeftState}.
 
 handle_frame(Frame, LeftState) ->
@@ -45,17 +53,24 @@ send_frame(Frame, RightState) ->
 
 %% ---------------------------
 
+send_heartbeat(Pid) ->
+    gen_server:cast(Pid, {send, ?HEARTBEAT_FRAME}).
+
+%% ---------------------------
+
 start_link(Params) ->
     gen_server:start_link(?MODULE, Params, []).
 
 %% ---------------------------
 
--record(state, {session, right_protocol, right_protocol_state, left_callback}).
+-record(state, {session, right_protocol, right_protocol_state, left_callback,
+                heartbeat_tref}).
 
 init([Session, RightProtocol, RightProtocolState]) ->
-    {ok, #state{session = Session,
-                right_protocol = RightProtocol,
-                right_protocol_state = RightProtocolState}}.
+    State0 = #state{session = Session,
+                   right_protocol = RightProtocol,
+                   right_protocol_state = RightProtocolState},
+    {ok, delay_heartbeat(State0)}.
 
 terminate(normal, _State) ->
     ok;
@@ -72,14 +87,21 @@ handle_info(Any, State) ->
 handle_cast({handle_frame, {utf8, Bin}},
             State = #state{right_protocol = RightProtocol,
                            right_protocol_state = RightProtocolState0}) ->
-    RightProtocolState1 = lists:foldl(
-                            fun (Frame, PState) ->
-                                    {ok, PState1} =
-                                        RightProtocol:handle_frame(
-                                          Frame, PState),
-                                    PState1
-                            end, RightProtocolState0, unwrap_frames(Bin)),
-    {noreply, State#state{right_protocol_state = RightProtocolState1}};
+    Fun = fun (Frame, PState) ->
+                  case Frame of
+                      ?HEARTBEAT_FRAME ->
+                          PState;
+                      _ ->
+                          {ok, PState1} =
+                              RightProtocol:handle_frame(
+                                Frame, PState),
+                          PState1
+                  end
+          end,
+    RightProtocolState1 = lists:foldl(Fun, RightProtocolState0,
+                                      unwrap_frames(Bin)),
+    State1 = State#state{right_protocol_state = RightProtocolState1},
+    {noreply, delay_heartbeat(State1)};
 
 handle_cast({send, Frame}, State) ->
     do_send_frame(Frame, State),
@@ -115,7 +137,17 @@ do_send_frame(Frame, #state{left_callback = {WriterModule, WriterArg}}) ->
     Wrapped = wrap_frame(Frame),
     WriterModule:send_frame({utf8, Wrapped}, WriterArg).
 
--define(FRAME, "~m~").
+
+delay_heartbeat(State = #state{heartbeat_tref = TRef0}) ->
+    case TRef0 of
+        undefined ->
+            ok;
+        _ ->
+            timer:cancel(TRef0)
+    end,
+    {ok, TRef} = timer:apply_after(?HEARTBEAT_DELAY,
+                                   ?MODULE, send_heartbeat, [self()]),
+    State#state{heartbeat_tref = TRef}.
 
 
 unwrap_frames(List) when is_list(List) ->
