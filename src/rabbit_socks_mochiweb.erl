@@ -115,7 +115,7 @@ rabbit_io(Req, Subprotocol, Rest) ->
                                    lists:reverse(PathElemsRev),
                                    Subprotocol,
                                    %% Wrap the subprotocol in Socket.IO framing
-                                   {rabbit_socks_socketio2, [Session, Subprotocol]}),
+                                   {rabbit_socks_socketio, [Session, Subprotocol]}),
             exit(normal);
         [_Timestamp, "", PollingTransport | PathElemsRev] ->
             %io:format("New polling connection ~p ~p~n", [Protocol, PollingTransport]),
@@ -124,7 +124,7 @@ rabbit_io(Req, Subprotocol, Rest) ->
                     Session = new_session_id(),
                     {ok, _Pid} =
                         polling(Transport, Req, lists:reverse(PathElemsRev),
-                                {rabbit_socks_socketio2, [Session, Subprotocol]},
+                                {rabbit_socks_socketio, [Session, Subprotocol]},
                                 Session);
                 {error, Err} ->
                     Req:respond({404, [], "Bad transport"})

@@ -1,4 +1,4 @@
--module(rabbit_socks_socketio2_sup).
+-module(rabbit_socks_socketio_sup).
 
 -behaviour(supervisor).
 -export([init/1]).
@@ -11,8 +11,8 @@
 
 init([]) ->
     {ok, {{simple_one_for_one, 0, 1},
-          [{undefined, {rabbit_socks_socketio2, start_link, []},
-           transient, 50, worker, [rabbit_socks_socketio2]}]}}.
+          [{undefined, {rabbit_socks_socketio, start_link, []},
+           transient, 50, worker, [rabbit_socks_socketio]}]}}.
 
 %%--------------------------------------------------------------------
 
