@@ -21,4 +21,4 @@
                       %%   [{protocol, rabbit_socks_echo}]}]}]},
                       %%{{"127.0.0.1", 5975}, []},
                       %%{{"127.0.0.1", 5976}, [{ssl, true}]}]}]},
-  {applications, [kernel, stdlib, rabbit, rabbit_mochiweb]}]}.
+  {applications, [kernel, stdlib, rabbit, rabbitmq_mochiweb]}]}.
