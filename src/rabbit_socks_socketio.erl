@@ -20,7 +20,6 @@
 
 -define(FRAME, "~m~").
 -define(HEARTBEAT_DELAY, 15000).
--define(HEARTBEAT_FRAME, {utf8, <<"~h~1">>}).
 
 %% ---------------------------
 
@@ -58,7 +57,7 @@ close_transport(RightState) ->
 %% ---------------------------
 
 send_heartbeat(Pid) ->
-    gen_server:cast(Pid, {send, ?HEARTBEAT_FRAME}).
+    gen_server:cast(Pid, send_heartbeat).
 
 %% ---------------------------
 
@@ -68,7 +67,7 @@ start_link(Params) ->
 %% ---------------------------
 
 -record(state, {session, right_protocol, right_protocol_state, left_callback,
-                heartbeat_tref}).
+                heartbeat_tref, heartbeat_expected}).
 
 init([Session, RightProtocol, RightProtocolState]) ->
     State0 = #state{session = Session,
@@ -76,9 +75,13 @@ init([Session, RightProtocol, RightProtocolState]) ->
                    right_protocol_state = RightProtocolState},
     {ok, delay_heartbeat(State0)}.
 
-terminate(normal, _State) ->
-    ok;
-terminate(Reason, _State) ->
+terminate(Reason, #state{heartbeat_tref = TRef}) ->
+    case TRef of
+        undefined ->
+            ok;
+        _ ->
+            timer:cancel(TRef)
+    end,
     io:format("~p died with ~p ~n", [?MODULE, Reason]),
     ok.
 
@@ -90,25 +93,44 @@ handle_info(Any, State) ->
 
 handle_cast({handle_frame, {utf8, Bin}},
             State = #state{right_protocol = RightProtocol,
-                           right_protocol_state = RightProtocolState0}) ->
-    Fun = fun (Frame, PState) ->
+                           right_protocol_state = RightProtocolState0,
+                           heartbeat_expected = HeartbeatExpectedFrame}) ->
+    Fun = fun (Frame, {Heartbeat, PState}) ->
                   case Frame of
-                      ?HEARTBEAT_FRAME ->
-                          PState;
+                      Heartbeat ->
+                          {undefined, PState};
                       _ ->
                           {ok, PState1} =
                               RightProtocol:handle_frame(Frame, PState),
-                          PState1
+                          {Heartbeat, PState1}
                   end
           end,
-    RightProtocolState1 = lists:foldl(Fun, RightProtocolState0,
-                                      unwrap_frames(Bin)),
-    State1 = State#state{right_protocol_state = RightProtocolState1},
+    {Heartbeat1, RightProtocolState1} =
+        lists:foldl(Fun, {HeartbeatExpectedFrame, RightProtocolState0},
+                    unwrap_frames(Bin)),
+    case Heartbeat1 of
+        HeartbeatExpectedFrame ->
+            ok;
+        undefined ->
+            io:format("got heartbeat ~p~n", [HeartbeatExpectedFrame])
+    end,
+    State1 = State#state{right_protocol_state = RightProtocolState1,
+                         heartbeat_expected = Heartbeat1},
     {noreply, delay_heartbeat(State1)};
 
 handle_cast({send, Frame}, State) ->
     do_send_frame(Frame, State),
     {noreply, State};
+
+handle_cast(send_heartbeat, State = #state{heartbeat_expected = undefined}) ->
+    Frame = construct_heartbeat_frame(),
+    io:format("send heartbeat ~p~n", [Frame]),
+    do_send_frame(Frame, State),
+    {noreply, State#state{heartbeat_expected = Frame}};
+
+handle_cast(send_heartbeat, State = #state{heartbeat_expected = NotReceived}) ->
+    io:format("socketio:heartbeat not received ~p. closing. ~n", [NotReceived]),
+    handle_cast(close_transport, State);
 
 handle_cast(close_transport,
             State = #state{left_callback = {WriterModule, WriterArg}}) ->
@@ -156,6 +178,11 @@ delay_heartbeat(State = #state{heartbeat_tref = TRef0}) ->
     {ok, TRef} = timer:apply_after(?HEARTBEAT_DELAY,
                                    ?MODULE, send_heartbeat, [self()]),
     State#state{heartbeat_tref = TRef}.
+
+construct_heartbeat_frame() ->
+    %% Keep it small.
+    R = random:uniform(9999),
+    {utf8, list_to_binary("~h~" ++ integer_to_list(R))}.
 
 
 unwrap_frames(List) when is_list(List) ->
