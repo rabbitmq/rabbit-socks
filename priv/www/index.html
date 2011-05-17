@@ -32,6 +32,7 @@
     <script type="text/javascript">
       var here = window.location.href;
       var wsurl = here.replace("http", "ws");
+      if (wsurl.charAt(wsurl.length - 1) != '/') wsurl += '/';
       var sock = new WebSocket(wsurl + 'websocket/', 'echo');
       var postbox = document.getElementById('postbox');
       var output = document.getElementById('output');
