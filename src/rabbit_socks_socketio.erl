@@ -19,7 +19,7 @@
 -export([send_heartbeat/1]).
 
 -define(FRAME, "~m~").
--define(HEARTBEAT_DELAY, 15000).
+-define(HEARTBEAT_DELAY, 10000).
 
 %% ---------------------------
 
