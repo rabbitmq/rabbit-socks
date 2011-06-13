@@ -1,8 +1,6 @@
 APP_NAME:=rabbit_socks
 DEPS:=rabbitmq-server rabbitmq-erlang-client rabbitmq-mochiweb
 
-ORIGINAL_APP_FILE:=$(EBIN_DIR)/rabbit_socks.app.in
-
 WITH_BROKER_TEST_COMMANDS=eunit:test(rabbit_socks_test_util,[verbose])
 
 define construct_app_commands
