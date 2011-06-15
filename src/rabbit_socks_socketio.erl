@@ -82,7 +82,7 @@ terminate(Reason, #state{heartbeat_tref = TRef}) ->
         _ ->
             timer:cancel(TRef)
     end,
-    io:format("~p died with ~p ~n", [?MODULE, Reason]),
+    error_logger:info_msg("~p died with ~p ~n", [?MODULE, Reason]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -108,12 +108,6 @@ handle_cast({handle_frame, {utf8, Bin}},
     {Heartbeat1, RightProtocolState1} =
         lists:foldl(Fun, {HeartbeatExpectedFrame, RightProtocolState0},
                     unwrap_frames(Bin)),
-    case Heartbeat1 of
-        HeartbeatExpectedFrame ->
-            ok;
-        undefined ->
-            io:format("got heartbeat ~p~n", [HeartbeatExpectedFrame])
-    end,
     State1 = State#state{right_protocol_state = RightProtocolState1,
                          heartbeat_expected = Heartbeat1},
     {noreply, delay_heartbeat(State1)};
@@ -124,12 +118,12 @@ handle_cast({send, Frame}, State) ->
 
 handle_cast(send_heartbeat, State = #state{heartbeat_expected = undefined}) ->
     Frame = construct_heartbeat_frame(),
-    io:format("send heartbeat ~p~n", [Frame]),
+    %io:format("send heartbeat ~p~n", [Frame]),
     do_send_frame(Frame, State),
     {noreply, State#state{heartbeat_expected = Frame}};
 
 handle_cast(send_heartbeat, State = #state{heartbeat_expected = NotReceived}) ->
-    io:format("socketio:heartbeat not received ~p. closing. ~n", [NotReceived]),
+    error_logger:warning_msg("socketio:heartbeat not received ~p. closing. ~n", [NotReceived]),
     handle_cast(close_transport, State);
 
 handle_cast(close_transport,
