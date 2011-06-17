@@ -143,6 +143,11 @@ handle_info({tcp_closed, Socket}, StateName,
     error_logger:warning_msg("Connection unexpectedly dropped (in ~p)",
                              [StateName]),
     {stop, normal, terminate_protocol(StateData)};
+handle_info({tcp_error, Socket, Reason}, StateName,
+            #state{socket = Socket} = StateData) ->
+    error_logger:warning_msg("Connection error reason=~p (in ~p)",
+                             [Reason, StateName]),
+    {stop, normal, terminate_protocol(StateData)};
 handle_info(Info, StateName, StateData) ->
     {stop, {unexpected_info, StateName, Info}, StateData}.
 
