@@ -1,5 +1,0 @@
-^tmp/
-^ebin/.*.beam$
-~$
-^dist/
-^build/
