@@ -6,14 +6,8 @@ clients (covering much of the rest of the browser world).
 
 ## We've only just begun
 
-Yes, it's early days; this _only just_ supports STOMP over Websockets, if you have the
-RabbitMQ STOMP adapter too, and an echo "protocol". It works with
-e.g., <http://github.com/jmesnil/stomp-websocket>.
-
-Socket.IO support isn't running yet.  There's no configuration to
-switch things off or listen on a different interface; and
-it's potentially a security hole (though STOMP does require
-authentication in the protocol).
+Yes, it's early days. WebSockets draft 76 is supported; Socket.IO
+support is limited to XHR-polling.
 
 ## How to build it
 
@@ -38,20 +32,78 @@ There -- easy!
 
 ## How to use it
 
-You can browse to <http://localhost:5975/index.html> or
-<http://localhost:5975/stomp.html> for demos. Note that they'll only
-work for WebSockets-supporting browsers at the minute.
+By default there are no listeners configured. You can start one
+through configuration or programmatically (e.g., from your own Erlang
+app).
 
-In general, Socks requires you to specify a (sub-)protocol. Since many
-libraries don't support the <code>WebSocket-Protocol</code> (or
-<code>Sec-WebSocket-Protocol</code>) header, it will also accept the
-protocol in the URL: e.g.,
+### Configuration
 
-    var socket = new WebSocket('ws://localhost:5975/websocket/echo');
+Rabbit Socks will start listeners specified in the environment entry
+`'listeners'`. By default this is an empty list. The syntax for a
+listener is
 
-Paths starting with <code>/websocket/</code> will use bare WebSockets;
-paths starting with <code>/socket.io/</code> will use Socket.IO's
-protocol (which may also be via WebSockets ..) -- more info on the
-latter when it's implemented.
+    Listener = {Interface, Module, Options}
+
+    Interface = rabbit_mochiweb
+              | Port
+              | {IpAddress, Port}
+
+    Options = []
+            | [Option | Options]
+
+`Port` is a port number, of course; `Module` is a callback module,
+e.g., `'rabbit_socks_echo'`. The options are passed through to
+mochiweb.
+
+If `'rabbit_mochiweb'` is supplied as the interface, the listener will
+be registered with [RabbitMQ's Mochiweb
+plugin](http://www.rabbitmq.com//mochiweb.html) in the context
+`'socks'`.
+
+As usual, you can supply such a configuration on the command line:
+
+    $ erl -rabbit_socks listeners [{rabbit_mochiweb, rabbit_socks_echo, []}]
+
+or in a [config file](http://www.erlang.org/doc/man/config.html).
+
+### From code
+
+    rabbit_socks:start_listener(Interface, Module, Options).
+
+with the meanings as given above.
+
+## URLs
+
+A listener serves two kinds of path: paths starting with `/websocket/`
+will use bare WebSockets; paths starting with `/socket.io/` will use
+Socket.IO's protocol (which may also be via WebSockets).
+
+The path after that prefix is given to the callback module.
+
+## Callback modules
+
+A callback module must define these procedures:
+
+ - `subprotocol_name()`: the name of the subprotocol, to be sent in
+    the connection establishment headers.
+
+ - `init(Path, [])`: is given the path and, for a callback module, an
+    empty list (yes this is a wart). It should return `{ok, State}` if
+    the connection can go ahead; the State will be supplied on
+    subsequent calls.
+
+ - `open(WriterModule, WriterArg, State)`: this is called when the
+   connection has been opened. `WriterModule` and `WriterArg` are used
+   to send data, so you should probably keep them in the state. It
+   should return `{ok, NewState}`.
+
+ - `handle_frame(Frame, State)`: this is called when a frame is
+   received, and should return `{ok, NewState}`.
+
+ - `terminate(State)` is called if the connection is closed from the
+   client end. It should return `'ok'`.
+
+Returning `{error, Reason}` at any point will shut the connection
+down.
 
 [ws]: http://tools.ietf.org/html/draft-hixie-thewebsocketprotocol-76 "WebSockets draft v76"
