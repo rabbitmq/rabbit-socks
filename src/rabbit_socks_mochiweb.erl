@@ -271,6 +271,4 @@ handover_socket({ssl, Sock}, Pid) ->
 handover_socket(Sock, Pid) ->
     gen_tcp:controlling_process(Sock, Pid).
 
-new_session_id() ->
-    [ C || C <- rabbit_guid:string_guid(?SESSION_PREFIX),
-           C /= $+, C /= $=, C /= $/ ].
+new_session_id() -> rabbit_guid:string_guid(?SESSION_PREFIX).
