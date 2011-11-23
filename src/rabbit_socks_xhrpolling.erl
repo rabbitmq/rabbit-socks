@@ -64,7 +64,9 @@ handle_cast(close_transport, State = #state{pending_request = Pending}) ->
     case Pending of
         none -> ok;
         {OldReq, OldFrom} ->
-            OldReq:respond({200, get_headers(), []}),
+            %% If the socket is Req: is closed, this command will
+            %% trigger exit(normal). We hate mochwieb. Sorry.
+            % OldReq:respond({200, get_headers(), []}),
             gen_server:reply(OldFrom, ok)
     end,
     {stop, normal, State#state{pending_request = none}};
