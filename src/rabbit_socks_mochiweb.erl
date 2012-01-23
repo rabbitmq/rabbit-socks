@@ -33,14 +33,15 @@ start_listener({rabbit_mochiweb, Instance, Prefix}, Subprotocol, Options) ->
     register_with_rabbit_mochiweb(Instance, Prefix, Subprotocol);
 
 start_listener(Listener, Subprotocol, Options) ->
-    Specs = rabbit_networking:check_tcp_listener_address(
-              rabbit_socks_listener_sup, Listener),
     [supervisor:start_child(rabbit_socks_listener_sup,
                             {Name,
                              {?MODULE, start_mochiweb_listener,
                               [Name, IPAddress, Port, Subprotocol, Options]},
                              transient, 10, worker, [rabbit_socks_mochiweb]})
-     || {IPAddress, Port, _Family, Name} <- Specs].
+     || {IPAddress, Port, _Family} <-
+            rabbit_networking:tcp_listener_addresses(Listener),
+        Name <- [rabbit_misc:tcp_name(rabbit_socks_listener_sup,
+                                      IPAddress, Port)]].
 
 %% TODO: when multi-mochiweb is verified, pay attention to the instance
 %% argument, and keep a note of the actual path returned.
