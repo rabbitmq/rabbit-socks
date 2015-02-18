@@ -1,3 +1,6 @@
+**Repository [moved to GitHub](https://github.com/rabbitmq/rabbit-socks)**.
+This is a stale read-only repository.
+
 # Rabbit Socks
 
 Support for communicating with RabbitMQ via [Websockets][ws] (v75 and v76,
