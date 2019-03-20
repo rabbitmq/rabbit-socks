@@ -12,13 +12,13 @@ support is limited to XHR-polling.
 ## How to build it
 
 Follow the usual kerfuffle given on
-<http://www.rabbitmq.com/plugin-development.html>; summary:
+<https://www.rabbitmq.com/plugin-development.html>; summary:
 
-    $ hg clone http://hg.rabbitmq.com/rabbitmq-public-umbrella
+    $ hg clone https://hg.rabbitmq.com/rabbitmq-public-umbrella
     $ cd rabbitmq-public-umbrella
     $ make co
     $ make
-    $ hg clone http://hg.rabbitmq.com/rabbit-socks
+    $ hg clone https://hg.rabbitmq.com/rabbit-socks
     $ cd rabbit-socks
     $ make
     $ cd ../rabbitmq-server
@@ -57,14 +57,14 @@ mochiweb.
 
 If `'rabbit_mochiweb'` is supplied as the interface, the listener will
 be registered with [RabbitMQ's Mochiweb
-plugin](http://www.rabbitmq.com//mochiweb.html) in the context
+plugin](https://www.rabbitmq.com//mochiweb.html) in the context
 `'socks'`.
 
 As usual, you can supply such a configuration on the command line:
 
     $ erl -rabbit_socks listeners [{rabbit_mochiweb, rabbit_socks_echo, []}]
 
-or in a [config file](http://www.erlang.org/doc/man/config.html).
+or in a [config file](https://www.erlang.org/doc/man/config.html).
 
 ### From code
 
@@ -106,4 +106,4 @@ A callback module must define these procedures:
 Returning `{error, Reason}` at any point will shut the connection
 down.
 
-[ws]: http://tools.ietf.org/html/draft-hixie-thewebsocketprotocol-76 "WebSockets draft v76"
+[ws]: https://tools.ietf.org/html/draft-hixie-thewebsocketprotocol-76 "WebSockets draft v76"
